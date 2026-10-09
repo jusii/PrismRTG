@@ -21,7 +21,8 @@
  * Works: the board with autoconfig_rtg YES (Zorro III, 0x144b/1, firmware
  * 1.03 or newer), the firmware's fixed modes at 8, 15, 16 and 32 bits,
  * 320-wide modes pixel-doubled, the palette, the hardware pointer, the
- * monitor switch on the CIA-B lines the firmware's monitor_switch names.
+ * monitor switch on the CIA-B lines the firmware's monitor_switch names
+ * (or ENV:Z3660-MONSWITCH, for a preset that leaves the switch to the OS).
  * Not yet: the blitter (PrismD draws on the CPU), the board with
  * autoconfig_rtg NO (no ConfigDev: not probed).
  */
@@ -29,6 +30,7 @@
 #include <libraries/configvars.h>
 #include <proto/exec.h>
 #include <proto/expansion.h>
+#include <proto/dos.h>
 #include "boardops.h"
 
 extern struct ExpansionBase *ExpansionBase;
@@ -353,6 +355,26 @@ static void z3_Shutdown(struct PrismBoard *b)
         z3_SetSwitch(b, FALSE);          /* the Amiga's own picture */
 }
 
+/* ENV:Z3660-MONSWITCH = a monitor_switch value (decimal, as in
+ * z3660cfg.txt) replaces the firmware's, in the ENV: style of Z3660.card's
+ * ENV:Z3660-NS-VSYNC. For a preset shared with another OS that drives the
+ * lines itself and so keeps monitor_switch 0. The probe runs in the
+ * driver's own process, so DOS is allowed here. */
+static void z3_monswitch_env(struct Z3Priv *p)
+{
+    char v[8];
+    LONG n = GetVar("Z3660-MONSWITCH", v, sizeof(v), GVF_GLOBAL_ONLY), i;
+    ULONG ms = 0;
+
+    if (n <= 0)
+        return;
+    for (i = 0; i < n && v[i] >= '0' && v[i] <= '9'; i++)
+        ms = ms * 10 + (v[i] - '0');
+    if (i == 0 || ms > 255)
+        return;                      /* not a number: the firmware's value stands */
+    p->monSwitch = ms & (MS_CTS | MS_SEL | MS_CTS_LEVEL | MS_SEL_LEVEL);
+}
+
 static BOOL z3_probe(struct PrismBoard *b)
 {
     struct ConfigDev *cd;
@@ -381,6 +403,7 @@ static BOOL z3_probe(struct PrismBoard *b)
     p->gfxdata   = (UBYTE *)cd->cd_BoardAddr + GFXDATA_OFFSET;
     p->ciab      = (volatile UBYTE *)CIAB;
     p->monSwitch = R32(b, REG_MONSWITCH) & (MS_CTS | MS_SEL | MS_CTS_LEVEL | MS_SEL_LEVEL);
+    z3_monswitch_env(p);
 
     b->setMode         = z3_SetMode;
     b->checkMode       = z3_CheckMode;
