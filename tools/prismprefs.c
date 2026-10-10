@@ -175,7 +175,7 @@ static LONG test_mode(struct Gui *g, LONG i, BOOL ask)
     void (*end)(void) = NULL;
     UWORD w = prefs_sizes[PREFS_SIZE(i)][0], h = prefs_sizes[PREFS_SIZE(i)][1];
     UBYTE bits = prefs_depths[PREFS_DEPTH(i)], hz = g->prefs.hz[i];
-    char label[96], rate[12];
+    char label[96], rate[16];
     LONG rc, t;
     BOOL stop = FALSE;
 

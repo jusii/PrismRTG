@@ -23,6 +23,8 @@ const UWORD prefs_sizes[PREFS_NSIZES][2] = {
      * the ZZ9000's firmware has 1920x1080, and P96 drivers with their own
      * mode lists (the Vampire's) may have both */
     { 960, 540 }, { 1920, 1080 },
+    /* 16:10 (issue #1, beta 5): common on PC monitors */
+    { 1440, 900 },
 };
 /* New depths go at the END too. 24 = 3 bytes a pixel, 32 = 4: a card may
  * have either or both (see board_format in prismd.c). */

@@ -834,6 +834,15 @@ static void qhdr(struct QueryHeader *q, ULONG tag, ULONG id, ULONG size)
     q->Length = (size + 7) / 8;
 }
 
+/* Ticks per Prism pixel (Resolution, ViewResolution, SpriteResolution,
+ * MouseTicks: all the same, so a pixel is square and one mouse count moves
+ * the pointer one pixel). Intuition keeps the pointer in ticks in a WORD:
+ * at 22 (hires) it stopped near x 1360 on a 1920x1080 screen (issue #1,
+ * beta 5). 11 (super hires) reaches 2978 pixels. */
+#ifndef PRISM_TICKS
+#define PRISM_TICKS 11
+#endif
+
 static ULONG P_GetDisplayInfoData(APTR h __asm("a0"), APTR buf __asm("a1"),
                                   ULONG size __asm("d0"), ULONG tag __asm("d1"),
                                   ULONG id __asm("d2"))
@@ -863,13 +872,13 @@ static ULONG P_GetDisplayInfoData(APTR h __asm("a0"), APTR buf __asm("a1"),
         qhdr(&u.di.Header, tag, r->id, len);
         u.di.PropertyFlags = DIPF_IS_WB | DIPF_IS_FOREIGN;
         if (prefs.dragging) u.di.PropertyFlags |= DIPF_IS_DRAGGABLE;
-        u.di.Resolution.x = 22;
-        u.di.Resolution.y = 22;
+        u.di.Resolution.x = PRISM_TICKS;
+        u.di.Resolution.y = PRISM_TICKS;
         u.di.PixelSpeed = 35;
         u.di.PaletteRange = 4096;
         u.di.NumStdSprites = 1;           /* the hardware cursor          */
-        u.di.SpriteResolution.x = 22;     /* sprite pixels = screen pixels */
-        u.di.SpriteResolution.y = 22;
+        u.di.SpriteResolution.x = PRISM_TICKS;     /* sprite pixels = screen pixels */
+        u.di.SpriteResolution.y = PRISM_TICKS;
         u.di.RedBits = u.di.GreenBits = u.di.BlueBits = 8;
         break;
     case DTAG_DIMS:
@@ -888,8 +897,8 @@ static ULONG P_GetDisplayInfoData(APTR h __asm("a0"), APTR buf __asm("a1"),
         len = sizeof(u.mi);
         qhdr(&u.mi.Header, tag, r->id, len);
         u.mi.Mspc = &prismMonitor;
-        u.mi.ViewResolution.x = 22;
-        u.mi.ViewResolution.y = 22;
+        u.mi.ViewResolution.x = PRISM_TICKS;
+        u.mi.ViewResolution.y = PRISM_TICKS;
         u.mi.ViewPositionRange.MaxX = r->m.width - 1;
         u.mi.ViewPositionRange.MaxY = r->m.height - 1;
         u.mi.TotalRows = r->m.height;
@@ -898,8 +907,8 @@ static ULONG P_GetDisplayInfoData(APTR h __asm("a0"), APTR buf __asm("a1"),
         /* ticks the pointer moves per mouse count: one pixel, as P96
          * reports it. With 1,1 here Intuition moved the pointer at half
          * speed (measured on the A4000 with relative mouse events). */
-        u.mi.MouseTicks.x = 22;
-        u.mi.MouseTicks.y = 22;
+        u.mi.MouseTicks.x = PRISM_TICKS;
+        u.mi.MouseTicks.y = PRISM_TICKS;
         u.mi.PreferredModeID = r->id;
         break;
     case DTAG_NAME:

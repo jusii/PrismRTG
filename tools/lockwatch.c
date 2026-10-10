@@ -21,6 +21,7 @@
 #include <dos/dosextens.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
 #include "../src/prism.h"
