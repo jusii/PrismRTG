@@ -60,6 +60,7 @@ struct IntuitionBase *IntuitionBase;
 struct ExpansionBase *ExpansionBase;
 
 struct PrismBoard board;
+struct PrismCard cards[MAX_CARDS] = { { &board } };
 
 /* libnix's write() calls __chkabort(), which exits the program on Ctrl-C.
  * PrismD must see Ctrl-C itself and take its patches out first. */
@@ -178,10 +179,52 @@ struct ModeRec {
 static const char version[] __attribute__((used)) = "$VER: PrismD 1.1b5 (10.10.26)";
 
 #define MAX_MODES PREFS_NMODES        /* every size at every depth */
-static struct ModeRec modes[MAX_MODES];
-static ULONG nmodes;
 
-static struct MonitorSpec prismMonitor;
+struct Blk { ULONG off, size; };
+#define MAX_BLKS 256
+struct PScreen;
+
+/* PrismD's own state for one board (struct PrismCard holds what the other
+ * modules need). Only card 0 for now, under the old names below. */
+struct CardState {
+    struct ModeRec modes[MAX_MODES];
+    ULONG nmodes;
+    struct MonitorSpec monitor;         /* the board's display-database monitor */
+    struct Blk blk[MAX_BLKS];           /* VRAM blocks in use, sorted        */
+    int nblk;
+    struct PScreen *shown;              /* screen the card is showing        */
+    struct ViewPort *shownVP;
+    struct ModeRec *cardMode;           /* mode the card is set to           */
+    struct PBitMap *shownPbm;           /* bitmap the card scans out         */
+    ULONG showStamp;
+    BOOL rtgOn;
+    ULONG palTab[256 * 3];
+    UBYTE palRGB[256 * 3];
+    struct PBitMap *testPbm;            /* PrismPrefs' Test picture          */
+    UWORD testPen[256];
+    ULONG testRgb[256];
+    UBYTE testPal[256 * 3];
+};
+static struct CardState cst[MAX_CARDS];
+
+#define modes        (cst[0].modes)
+#define nmodes       (cst[0].nmodes)
+#define prismMonitor (cst[0].monitor)
+#define blk          (cst[0].blk)
+#define nblk         (cst[0].nblk)
+#define shown        (cst[0].shown)
+#define shownVP      (cst[0].shownVP)
+#define cardMode     (cst[0].cardMode)
+#define shownPbm     (cst[0].shownPbm)
+#define showStamp    (cst[0].showStamp)
+#define rtgOn        (cst[0].rtgOn)
+#define palTab       (cst[0].palTab)
+#define palRGB       (cst[0].palRGB)
+#define testPbm      (cst[0].testPbm)
+#define testPen      (cst[0].testPen)
+#define testRgb      (cst[0].testRgb)
+#define testPal      (cst[0].testPal)
+
 static char monName[] = "prism.monitor";
 
 static struct ModeRec *mode_by_id(ULONG id)
@@ -276,10 +319,6 @@ static void build_modes(void)
 
 /* ---- VRAM allocator: first fit over a sorted list of used blocks --- */
 
-struct Blk { ULONG off, size; };
-#define MAX_BLKS 256
-static struct Blk used[MAX_BLKS];
-static int nused;
 
 LONG vram_alloc(ULONG size, UBYTE format, ULONG pitch, UWORD width, UWORD height)
 {
@@ -290,34 +329,34 @@ LONG vram_alloc(ULONG size, UBYTE format, ULONG pitch, UWORD width, UWORD height
     if (board.ops && board.ops->allocate) {
         struct PrismSurface surface={NULL,0,size,pitch,width,height,format,0,PSF_VRAM};
         surface.bpp=board_bpp(format);
-        if (!board.ops->release || nused == MAX_BLKS || !board.ops->allocate(&board,&surface)) return -1;
+        if (!board.ops->release || nblk == MAX_BLKS || !board.ops->allocate(&board,&surface)) return -1;
         pos=surface.offset;
         if (pos>board.vramSize || size>board.vramSize-pos) goto reject;
-        for (i=0;i<nused && used[i].off<pos;i++);
-        if ((i && used[i-1].off+used[i-1].size>pos) ||
-            (i<nused && pos+size>used[i].off)) goto reject;
-        for (j=nused;j>i;j--) used[j]=used[j-1];
-        used[i].off=pos;used[i].size=size;nused++;
+        for (i=0;i<nblk && blk[i].off<pos;i++);
+        if ((i && blk[i-1].off+blk[i-1].size>pos) ||
+            (i<nblk && pos+size>blk[i].off)) goto reject;
+        for (j=nblk;j>i;j--) blk[j]=blk[j-1];
+        blk[i].off=pos;blk[i].size=size;nblk++;
         return pos;
 reject:
         board.ops->release(&board,pos);
         return -1;
     }
     size = (size + 255) & ~255UL;
-    if (nused == MAX_BLKS)
+    if (nblk == MAX_BLKS)
         return -1;
-    for (i = 0; i <= nused; i++) {
-        ULONG end = (i < nused) ? used[i].off : board.vramSize;
+    for (i = 0; i <= nblk; i++) {
+        ULONG end = (i < nblk) ? blk[i].off : board.vramSize;
         if (end - pos >= size) {
-            for (j = nused; j > i; j--)
-                used[j] = used[j - 1];
-            used[i].off = pos;
-            used[i].size = size;
-            nused++;
+            for (j = nblk; j > i; j--)
+                blk[j] = blk[j - 1];
+            blk[i].off = pos;
+            blk[i].size = size;
+            nblk++;
             return pos;
         }
-        if (i < nused)
-            pos = used[i].off + used[i].size;
+        if (i < nblk)
+            pos = blk[i].off + blk[i].size;
     }
     return -1;
 }
@@ -327,13 +366,13 @@ ULONG vram_free_bytes(ULONG *largest)
 {
     ULONG pos = 0, total = 0, big = 0;
     int i;
-    for (i = 0; i <= nused; i++) {
-        ULONG end = (i < nused) ? used[i].off : board.vramSize;
+    for (i = 0; i <= nblk; i++) {
+        ULONG end = (i < nblk) ? blk[i].off : board.vramSize;
         ULONG gap = end > pos ? end - pos : 0;
         total += gap;
         if (gap > big) big = gap;
-        if (i < nused)
-            pos = used[i].off + used[i].size;
+        if (i < nblk)
+            pos = blk[i].off + blk[i].size;
     }
     if (largest) *largest = big;
     return total;
@@ -342,12 +381,12 @@ ULONG vram_free_bytes(ULONG *largest)
 void vram_free(ULONG off)
 {
     int i;
-    for (i = 0; i < nused; i++)
-        if (used[i].off == off) {
+    for (i = 0; i < nblk; i++)
+        if (blk[i].off == off) {
             if (board.ops && board.ops->release) board.ops->release(&board,off);
-            for (; i < nused - 1; i++)
-                used[i] = used[i + 1];
-            nused--;
+            for (; i < nblk - 1; i++)
+                blk[i] = blk[i + 1];
+            nblk--;
             return;
         }
 }
@@ -389,12 +428,6 @@ static void pending_saw(struct ModeRec *mr)
 
 struct SignalSemaphore lock;             /* see prismint.h                */
 static struct PScreen *pscreens;
-static struct PScreen *shown;            /* screen the card is showing    */
-static struct ViewPort *shownVP;
-static struct ModeRec *cardMode;         /* mode the card is set to       */
-static struct PBitMap *shownPbm;         /* bitmap the card scans out     */
-static ULONG showStamp;
-static BOOL rtgOn;
 
 BOOL pbm_is_shown(struct PBitMap *p)
 {
@@ -448,8 +481,6 @@ static struct PScreen *ps_by_screen(struct Screen *s)
     return NULL;
 }
 
-static ULONG palTab[256 * 3];
-static UBYTE palRGB[256 * 3];
 
 /* A screen's colours at full precision into palTab. On ECS a ColorMap
  * keeps only 4 bits a gun, so GetRGB32() alone turns a 256-colour picture
@@ -1548,10 +1579,6 @@ LONG h_ObtainBestPenA(struct Regs *r)
  * the mode: it needs no entry in the mode table, so a mode that is switched
  * off, or a refresh rate that isn't the saved one, can be tried before it
  * is saved. Runs in the caller's task. */
-static struct PBitMap *testPbm;
-static UWORD testPen[256];
-static ULONG testRgb[256];
-static UBYTE testPal[256 * 3];
 
 static void test_hue(int h, UBYTE *r, UBYTE *g, UBYTE *b)
 {

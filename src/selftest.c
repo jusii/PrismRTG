@@ -17,8 +17,6 @@
 #include <string.h>
 #include "prismint.h"
 
-UBYTE textBad;                       /* bit n: blitter text wrong at n bytes/pixel */
-
 #define TW 37                        /* odd width, past one byte, not a multiple of 8 */
 #define TH 5
 #define TMOD 6                       /* rows of (37+7)/8 = 5 bytes, 6 apart */

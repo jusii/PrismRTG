@@ -20,6 +20,16 @@ void blit_settle(void);
 
 extern struct PrismBoard board;
 
+/* One graphics board PrismD drives (docs/multi-board.md). Card 0's board
+ * is `board`; its per-board state in prismd.c is still reached by the old
+ * names. */
+#define MAX_CARDS 2
+struct PrismCard {
+    struct PrismBoard *b;               /* the driver's hooks, VRAM, limits  */
+    UBYTE textBad;                      /* bit n: blitter text wrong at n bytes/pixel */
+};
+extern struct PrismCard cards[MAX_CARDS];
+
 /* The drawing lock. Drawing code takes it with LOCK(), which also takes the
  * software pointer out of the shown bitmap (pointer.c puts it back once a
  * tick has passed without drawing), so nothing draws over it, reads it or
@@ -45,7 +55,7 @@ void render_quit(void);
 void gels_init(void);
 void gels_quit(void);
 /* selftest.c: the board's text blit against a known answer (first mode set) */
-extern UBYTE textBad;                        /* bit n: wrong at n bytes/pixel */
+#define textBad (cards[0].textBad)
 void selftest_text(void);
 /* is p one of the live Prism bitmaps? (a handle from a program; the
  * pointer is compared, never read) */

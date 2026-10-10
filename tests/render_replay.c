@@ -7,7 +7,7 @@
 struct PrismBoard board;
 struct SignalSemaphore lock;
 struct GfxBase *GfxBase=NULL; /* not common: keeps libnix from auto-opening it */
-UBYTE textBad;                /* selftest.c: no depth failed */
+struct PrismCard cards[MAX_CARDS] = { { &board } }; /* textBad 0: no depth failed */
 static ULONG hw_calls;
 static enum PrismResult outcome=PR_FAILED;
 void dbg(const char *fmt,...) { (void)fmt; } /* PrismD's debug log */
