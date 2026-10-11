@@ -19,7 +19,7 @@ Install:   double-click Install_PrismRTG (the standard Installer), or from a
            is installed, lists its monitor files and asks: back them up
            (moved to SYS:Storage/Picasso96-parked, never deleted) or leave
            them (then PrismRTG stays off). Remove moves them back.
-Update or remove: run Install_PrismRTG again.
+Update, install afresh (new settings) or remove: run Install_PrismRTG again.
 
 What goes where
   C:PrismD               the driver; started at boot

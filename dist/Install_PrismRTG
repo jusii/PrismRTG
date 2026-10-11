@@ -50,14 +50,25 @@
         (askchoice
             (prompt "PrismRTG is installed on this Amiga. What should the installer do?")
             (help "Update copies this package's programs over the installed ones. "
-                  "Your settings are kept.\n\n"
+                  "Your settings (Prefs/PrismPrefs, the Workbench screen) are kept.\n\n"
+                  "Install afresh copies the programs and starts the settings over: "
+                  "PrismPrefs' defaults, and the Workbench screen question again.\n\n"
                   "Remove deletes PrismRTG, puts the Workbench screen mode back the way "
                   "it was before, and moves Picasso96 back out of its backup drawer "
                   "(SYS:Storage/Picasso96-parked) if the installer put it there.")
-            (choices "Update PrismRTG" "Remove PrismRTG")
+            (choices "Update PrismRTG, keep my settings"
+                     "Install afresh, new settings"
+                     "Remove PrismRTG")
             (default 0))))
 
+; afresh: the settings go, and the rest of the install runs as a first one
 (if (= mode 1)
+    (
+        (run "Delete >NIL: ENVARC:Prism.prefs ENV:Prism.prefs QUIET")
+        (set fresh 1)
+    ))
+
+(if (= mode 2)
     (
         ; our Picasso96API.library file goes first (only ours: it is tiny), so
         ; that Picasso96's own can come back to its place

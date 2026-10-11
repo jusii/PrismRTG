@@ -305,9 +305,13 @@ Unpack the archive, open the `PrismRTG` drawer and double-click
 
 ![The installer's Picasso96 question](docs/installer-picasso96.png)
 
-Reboot. Run Install_PrismRTG again to update or to remove PrismRTG; Remove
-moves Picasso96 back out of the backup drawer and puts the previous screen
-mode back.
+Reboot. Run Install_PrismRTG again on an installed PrismRTG and it asks:
+**update** (the programs are replaced, your settings and the Workbench
+screen are kept), **install afresh** (the settings start over and the
+screen question is asked again) or **remove** (Picasso96 comes back out
+of the backup drawer and the previous screen mode is put back). The
+Picasso96 question is asked on every install, so a Picasso96 added later
+is found too.
 
 PrismRTG and Picasso96 cannot both be active on one Amiga: with Picasso96's
 monitor files still in `DEVS:Monitors` (or its `rtg.library` in memory),
