@@ -16,7 +16,9 @@
  *    frame is redone as a safety net;
  *  - only the rows that depend on what changed are composed again: the
  *    screen behind when it changed, the front's band when it did, the
- *    rows under the pointer when it moved;
+ *    rows under the pointer when it moved; when the front only moved
+ *    (dragging), its band and the rows it uncovered - rows of the screen
+ *    behind that were already showing it stay as they are;
  *  - the front's band is copied by the card's blitter from its own VRAM
  *    into the frame's, never through the CPU, where the board has
  *    copyBetween and both are in VRAM in the same format;
@@ -46,7 +48,7 @@ static UBYTE *rowMode, *prevMode, *rowDirty;
 
 /* what the last composed frame was made from */
 static ULONG seenFrontMod, seenBackMod, seenPal, seenPip;
-static WORD seenTop, seenBackTop, seenPX, seenPY, seenOv0, seenOv1;
+static WORD seenTop, seenBackTop, seenPX, seenPY, seenOv0, seenOv1, seenBand0, seenBand1;
 static const void *seenScreen, *seenFront, *seenBack;
 static BOOL seenHwBand;
 static UWORD idleTicks;
@@ -157,7 +159,7 @@ void present_tick(void)
     struct Screen *screen;
     struct PrismSurface surface;
     UWORD width,height,y; WORD top,backTop;
-    BOOL showBack,hwBand,full,frontChanged,backChanged,ptrChanged;
+    BOOL showBack,hwBand,full,moved,frontChanged,backChanged,ptrChanged;
     static UBYTE backMap[256];
     static ULONG mapPal; static const struct PBitMap *mapFor;
     const UBYTE *map=NULL;
@@ -204,9 +206,12 @@ void present_tick(void)
 
     /* what changed since the last frame? */
     full = !valid || screen!=seenScreen || front!=seenFront || back!=seenBack ||
-        top!=seenTop || backTop!=seenBackTop || paletteGen!=seenPal || pipGen!=seenPip ||
+        backTop!=seenBackTop || paletteGen!=seenPal || pipGen!=seenPip ||
         hwBand!=seenHwBand || ++idleTicks>=SAFETY_TICKS;
-    frontChanged = full || front->modified!=seenFrontMod || volatile_bitmap(front) ||
+    /* the front moved (a drag step): its band is redone, and of the rest
+     * only the rows that were in the band before (now uncovered) */
+    moved = top!=seenTop;
+    frontChanged = full || moved || front->modified!=seenFrontMod || volatile_bitmap(front) ||
         p96_pip_volatile(screen);
     backChanged = full || (back && (back->modified!=seenBackMod || volatile_bitmap(back))) ||
         (back && screen->NextScreen && p96_pip_volatile(screen->NextScreen));
@@ -253,7 +258,8 @@ void present_tick(void)
             composite_row(&frame,y,front,sy);
             continue;
         }
-        redo = backChanged || (ptrChanged && ((y>=ovY0 && y<ovY1) || (y>=seenOv0 && y<seenOv1)));
+        redo = backChanged || (moved && y>=seenBand0 && y<seenBand1) ||
+            (ptrChanged && ((y>=ovY0 && y<ovY1) || (y>=seenOv0 && y<seenOv1)));
         if (!redo) continue;
         rowDirty[y]=TRUE;
         memset(row,0,frame.bpr);
@@ -290,6 +296,7 @@ void present_tick(void)
         seenScreen=screen;seenFront=front;seenBack=back;seenTop=top;seenBackTop=backTop;
         seenPX=posX;seenPY=posY;seenPal=paletteGen;seenPip=pipGen;seenHwBand=hwBand;
         seenOv0=ovY0;seenOv1=ovY1;seenFrontMod=front->modified;
+        seenBand0=bandY0;seenBand1=bandY1;
         seenBackMod=back ? back->modified : 0;
     } else valid=FALSE;                  /* a failed write: compose the whole next tick */
     ReleaseSemaphore(&lock);

@@ -46,6 +46,7 @@ struct PBitMap *swOn;
 volatile ULONG prismActivity;
 WORD swX, swY, swW, swH;                        /* drawn rectangle (prismint.h) */
 static ULONG swSeen;
+static volatile ULONG swHits;                    /* drawing that took it out */
 static BOOL  swDirty;
 static UBYTE *swSave;                   /* allocated at the first draw */
 
@@ -126,6 +127,12 @@ void sw_hide(void)
         CopyMem(swSave + r * n, p->pix + (ULONG)(swY + r) * p->bpr + (ULONG)swX * p->bpp, n);
 }
 
+void sw_hit(void)
+{
+    swHits++;
+    sw_hide();
+}
+
 void sw_clear(struct PBitMap *p, WORD x0, WORD y0, WORD x1, WORD y1)
 {
     if (!swOn)
@@ -133,7 +140,7 @@ void sw_clear(struct PBitMap *p, WORD x0, WORD y0, WORD x1, WORD y1)
     if (p && (p != swOn || x1 < swX || x0 >= swX + swW || y1 < swY || y0 >= swY + swH))
         return;
     prismActivity++;
-    sw_hide();
+    sw_hit();
 }
 
 /* Draw the software pointer into the shown bitmap at the sprite position,
@@ -190,8 +197,11 @@ static void sw_tick(void)
         sw_hide();
         return;
     }
-    if (prismActivity != swSeen) {     /* drawn into lately: wait for quiet */
-        swSeen = prismActivity;
+    /* drawing hit it lately: wait for a tick in which nothing does (drawing
+     * elsewhere - a clock, a shell scrolling in another window - used to
+     * keep it away too, and colour changes took it out every time) */
+    if (swHits != swSeen) {
+        swSeen = swHits;
         return;
     }
     if (swOn && !swDirty && swOn == p && swPX == posX && swPY == posY)

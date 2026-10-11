@@ -61,6 +61,10 @@ $CC -nostartfiles -nostdlib -s -o out/Picasso96API.library tools/p96stub.S
 $CC $CFLAGS -s -o out/p96test tools/p96test.c
 $CC $CFLAGS -s -o out/trapwatch tools/trapwatch.c
 $CC $CFLAGS -s -o out/tmpltest tools/tmpltest.c
+$CC $CFLAGS -s -o out/movebench tools/movebench.c
+$CC $CFLAGS -s -o out/dragcheck tools/dragcheck.c
+$CC $CFLAGS -DSCRMOVE -s -o out/scrmove tools/dragcheck.c
+$CC $CFLAGS -s -o out/busydraw tools/busydraw.c
 $CC $CFLAGS -s -o out/stftest tools/stftest.c
 $CC $CFLAGS -s -o out/vramcheck tools/vramcheck.c
 $CC $CFLAGS -s -o out/prismstate tools/prismstate.c

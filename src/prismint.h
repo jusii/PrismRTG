@@ -38,12 +38,18 @@ struct PBitMap;
 extern struct PBitMap *swOn;           /* bitmap the software pointer is drawn into */
 extern volatile ULONG prismActivity;
 void sw_hide(void);
+/* drawing reached the pointer: take it out, and keep it out until a tick
+ * passes in which nothing hits it again (pointer.c) */
+void sw_hit(void);
 UBYTE pen_nearest(const ULONG *rgbTab, ULONG rgb);   /* render.c */
 /* Drawing into `p` (bitmap coordinates, inclusive): take the pointer out
  * if it is in the way; p == NULL: always. Caller holds the lock or Forbid. */
 void sw_clear(struct PBitMap *p, WORD x0, WORD y0, WORD x1, WORD y1);
 #define LOCK() do { ObtainSemaphore(&lock); prismActivity++; \
-                    if (swOn) sw_hide(); } while (0)
+                    if (swOn) sw_hit(); } while (0)
+/* The lock for work that touches no pixels (palette tables, queries): the
+ * software pointer stays where it is. */
+#define LOCK_QUIET() ObtainSemaphore(&lock)
 /* The lock for work on one known bitmap: the pointer leaves only if that is
  * the bitmap it is drawn into (a game locking its back buffer every frame
  * must not keep it away). */

@@ -866,7 +866,7 @@ static LONG P_PIP_SetTagList(struct Window *w __asm("a0"),struct TagItem *tags _
 static LONG P_PIP_GetTagList(struct Window *w __asm("a0"),struct TagItem *tags __asm("a1"))
 {
     struct PrismPIP *p;struct TagItem *ti,*next=tags;LONG n=0;
-    LOCK();p=pip_find(w);
+    LOCK_QUIET();p=pip_find(w);
     while(p && (ti=NextTagItem(&next))) {
         ULONG value,*dest=(APTR)ti->ti_Data;
         if(!dest)continue;
@@ -1018,7 +1018,7 @@ static LONG P_GetBoardDataTagList(ULONG boardNo __asm("d0"), struct TagItem *tag
 
     if (boardNo != 0)
         return 0;
-    LOCK();
+    LOCK_QUIET();
     freeBytes = vram_free_bytes(&largest);
     ReleaseSemaphore(&lock);
     for (i = 1; i < RGBFB_MaxFormats; i++)

@@ -57,6 +57,19 @@ alignments averaged, as in the beta 5 speed work), and on the A4000 when it is a
    names pointing there. No change in behaviour or speed; all seven emulated boxes must pass.
 2. **Bitmaps and screens carry their board** - `PBitMap.card`, `PScreen.card`; drawing, VRAM
    allocation and display go through them. Still one board loaded. Speed checked.
+   In detail:
+   * `PBitMap` gets `card` (its `struct PrismCard`) and `bd` (that card's `PrismBoard`, kept
+     beside it so the drawing fast paths load the board in one step). Set where a bitmap is
+     made: a screen's from its mode, a friend's from the friend, anything else card 0.
+   * The fast paths in `prismint.h` (`HW_OK`, `hw_fits`, `pbm_fill`, `pbm_copy`, `pbm_line`,
+     `pbm_expand`, `BOARD_CAN`) and `pbm_fits` take the board from the bitmap. A copy between
+     bitmaps of two boards goes through the CPU.
+   * The VRAM allocator takes the card: `vram_alloc`/`vram_free`/`vram_get_size`/
+     `vram_free_bytes` work on that card's block list (`cst[n].blk`).
+   * `ModeRec` gets `card`; `PScreen` takes its card from its mode.
+   * The compositor, pointer, Test picture and text self-test use the card of the screen they
+     work on (still always card 0 here; per card in step 4).
+   * The global `board` stays as card 0's storage until step 3.
 3. **Load two boards** - Auto loads every board its drivers find (or `BOARD=` / a new `BOARD2=`
    says which); the second registers `PRISM2:`. Screens on board 1 open and draw; all checks
    pass on both boards in `dual-060.uae`.

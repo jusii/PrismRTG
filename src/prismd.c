@@ -163,6 +163,13 @@ static void dbg_flush(void)
 /* ---- modes ---------------------------------------------------------- */
 
 struct ModeRec {
+    /* A DisplayInfoHandle from FindDisplayInfo is ours (a ModeRec), and
+     * graphics.library reads it as one of its own records: links first,
+     * then the mode ID (major and minor key) at offset 16. With other
+     * fields there it read $01505249 ("\1PRI" - bpp and the name), looked
+     * that up through the whole display database, several times for
+     * every MoveScreen: dragging a screen cost about 120 ms a step. */
+    APTR  recLinks[4];        /* no links: nothing is chained to it      */
     ULONG id;
     struct PrismMode m;
     UBYTE maxDepth;           /* depth Intuition opens its screens with      */
@@ -175,6 +182,8 @@ struct ModeRec {
      * keep some zeroes around ours in case anything peeks inside. */
     UBYTE pad[128];
 };
+/* where graphics.library reads a record's mode ID (see above) */
+typedef char modeRecIdAt16[offsetof(struct ModeRec, id) == 16 ? 1 : -1];
 
 static const char version[] __attribute__((used)) = "$VER: PrismD 1.1b5 (10.10.26)";
 
@@ -608,6 +617,7 @@ static void palette_update(struct ViewPort *vp)
      * are known (early in OpenScreen) paint it pen 0. */
     if (ps->mode->bpp >= 2 && !ps->painted && ps->pbm) {
         ps->painted = TRUE;
+        SW_CLEAR(ps->pbm, 0, 0, 32767, 32767);    /* the locks above leave the pointer */
         pbm_fill_pen(ps->pbm, 0);
     }
     if (vp == shownVP)
@@ -803,6 +813,27 @@ static ULONG P_NextDisplayInfo(ULONG id __asm("d0"))
     return r;
 }
 
+#ifdef PRISM_MISSLOG
+/* test builds: which IDs go to graphics' own (slow) database search */
+static struct { ULONG key, n; char what; } miss[24];
+static void miss_count(char what, ULONG key)
+{
+    int i;
+    for (i = 0; i < 24 && miss[i].n && (miss[i].key != key || miss[i].what != what); i++);
+    if (i < 24) { miss[i].key = key; miss[i].what = what; miss[i].n++; }
+}
+static void miss_print(void)
+{
+    int i;
+    for (i = 0; i < 24 && miss[i].n; i++)
+        printf("PrismD miss: %c %08lx x%lu\n", miss[i].what, (unsigned long)miss[i].key, (unsigned long)miss[i].n);
+    fflush(stdout);
+}
+#define MISS(w, k) miss_count(w, k)
+#else
+#define MISS(w, k) ((void)0)
+#endif
+
 static APTR P_FindDisplayInfo(ULONG id __asm("d0"))
 {
     APTR r;
@@ -810,8 +841,10 @@ static APTR P_FindDisplayInfo(ULONG id __asm("d0"))
     r = mode_by_id(id);
     pending_saw(r);
     if (IS_PRISM_ID(id)) dbg("FindDisplayInfo %lx -> %lx\n", id, (ULONG)r);
-    if (!r)
+    if (!r) {
+        MISS('F', id);
         r = (APTR)c_d0(o_FindDisplayInfo, GfxBase, id);
+    }
     LEAVE();
     return r;
 }
@@ -859,6 +892,8 @@ static ULONG P_GetDisplayInfoData(APTR h __asm("a0"), APTR buf __asm("a1"),
     ENTER();
     r = h ? mode_by_handle(h) : mode_by_id(id);
     if (!r) {
+        MISS(h ? 'H' : 'I', h ? (ULONG)h : id);
+        MISS('T', tag);
         len = c_a0a1d0d1d2(o_GetDisplayInfoData, GfxBase, h, buf, size, tag, id);
         LEAVE();
         return len;
@@ -1033,7 +1068,7 @@ static void palette_one(struct ViewPort *vp, ULONG n, ULONG r, ULONG g, ULONG b)
 {
     struct PScreen *ps;
 
-    LOCK();
+    LOCK_QUIET();
     ps = ps_by_vp(vp);
     if (ps && n < 256 && vp->ColorMap && n < vp->ColorMap->Count) {
         if (ps->mode->bpp >= 2 && !ps->painted) {
@@ -1058,14 +1093,14 @@ static void palette_one(struct ViewPort *vp, ULONG n, ULONG r, ULONG g, ULONG b)
 
 static void palette_changed(struct ViewPort *vp)
 {
-    LOCK();
+    LOCK_QUIET();
     palette_update(vp);
     ReleaseSemaphore(&lock);
 }
 
 static void record_vp(struct ViewPort *vp, ULONG n, ULONG r, ULONG g, ULONG b)
 {
-    LOCK();
+    LOCK_QUIET();
     ps_record(ps_by_vp(vp), n, r, g, b);
     ReleaseSemaphore(&lock);
 }
@@ -1095,7 +1130,7 @@ static void P_LoadRGB32(struct ViewPort *vp __asm("a0"), const ULONG *t __asm("a
     if (t) {
         /* (count << 16 | first), count * 3 ULONGs, ..., 0 */
         const ULONG *q = t;
-        LOCK();
+        LOCK_QUIET();
         {
             struct PScreen *ps = ps_by_vp(vp);
             while (ps && *q) {
@@ -1469,7 +1504,7 @@ static BOOL screen_info(struct Screen *s, struct PrismScreenInfo *info)
     struct PScreen *ps;
     BOOL ok = FALSE;
 
-    LOCK();
+    LOCK_QUIET();
     if ((ps = ps_by_screen(s))) {
         info->vram = (ps->front ? ps->front : ps->pbm)->pix;
         info->bytesPerRow = ps->mode->m.bytesPerRow;
@@ -1525,7 +1560,7 @@ static void cm_one(struct ColorMap *cm, ULONG pen)
     if (!cm || !cm->cm_vp || pen >= cm->Count || pen > 255)
         return;
     GetRGB32(cm, pen, 1, c);
-    LOCK();
+    LOCK_QUIET();
     if ((ps = ps_by_vp(cm->cm_vp)) && ps->palKnown[pen] &&
         !((ps->pal32[pen][0] ^ c[0]) & 0xf0000000UL) &&
         !((ps->pal32[pen][1] ^ c[1]) & 0xf0000000UL) &&
@@ -1573,7 +1608,7 @@ LONG h_ObtainBestPenA(struct Regs *r)
      * that only came close keeps what it had */
     if (cm && cm->cm_vp && r->d[0] != -1) {
         struct PScreen *ps;
-        LOCK();
+        LOCK_QUIET();
         if ((ps = ps_by_vp(cm->cm_vp)) && (ULONG)r->d[0] < 256 && !ps->palKnown[r->d[0]])
             ps_record(ps, r->d[0], cr, cg, cb);
         ReleaseSemaphore(&lock);
@@ -2348,6 +2383,9 @@ int main(void)
                 dbg_flush();
         }
         SetSignal(0, SIGBREAKF_CTRL_C);
+#ifdef PRISM_MISSLOG
+        miss_print();
+#endif
         if (pscreens) {
             printf("PrismD: Prism screens are still open - close them first\n");
             continue;
