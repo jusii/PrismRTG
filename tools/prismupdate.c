@@ -25,7 +25,7 @@
  *
  * Exit codes: 0 up to date, 5 a newer release exists (printed), 10 could
  * not check (no stack, no AmiSSL, no connection), 20 a fetch or install
- * failed. The first line printed is what PrismPrefs shows.
+ * failed. The last line printed is the result, which PrismPrefs shows.
  */
 #include <exec/types.h>
 #include <exec/memory.h>

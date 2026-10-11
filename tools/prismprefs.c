@@ -246,11 +246,16 @@ static void check_update(struct Gui *g)
     sprintf(cmd, "C:PrismUpdate SOURCE=%s%s%s >T:PrismUpdate.out", updSource[g->prefs.updates],
             g->prefs.mirror[0] ? " MIRROR=" : "", g->prefs.mirror);
     rc = SystemTags((STRPTR)cmd, SYS_Input, 0, SYS_Output, 0, NP_StackSize, 65536, TAG_DONE);
+    /* its last line is the result (a note about an unverified connection
+     * can come before it) */
     line[0] = 0;
     if ((f = Open((STRPTR)"T:PrismUpdate.out", MODE_OLDFILE))) {
-        if (FGets(f, (STRPTR)line, sizeof(line))) {
-            char *e = strpbrk(line, "\r\n");
+        char one[160];
+        while (FGets(f, (STRPTR)one, sizeof(one))) {
+            char *e = strpbrk(one, "\r\n");
             if (e) *e = 0;
+            if (one[0])
+                strcpy(line, one);
         }
         Close(f);
     }
