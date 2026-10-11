@@ -935,7 +935,8 @@ void render_quit(void)
 
 #define FOREIGN(fn, reg) do { \
         struct RastPort *frp_ = (struct RastPort *)r->a[reg]; \
-        if (frp_ && bm_foreign(frp_->BitMap)) return foreign(fn, r, frp_); \
+        if (frp_ && frp_->BitMap && !(frp_->BitMap->Flags & BMF_PRISM) && \
+            bm_foreign(frp_->BitMap)) return foreign(fn, r, frp_); \
     } while (0)
 
 /* A semaphore nobody else holds: free, or owned by this task. */
@@ -1117,6 +1118,14 @@ static void fill_cb(struct PBitMap *p, WORD bx0, WORD by0, WORD bx1, WORD by1,
     }
 }
 
+/* h_RectFill's solid case: the foreground pen, the RastPort's write mask */
+static void solid_cb(struct PBitMap *p, WORD bx0, WORD by0, WORD bx1, WORD by1,
+                     WORD ox, WORD oy, void *ctx)
+{
+    const struct RastPort *rp = ctx;
+    fill(p, bx0, by0, bx1, by1, rp->FgPen, rp->Mask, FALSE);
+}
+
 void blt_template(struct RastPort *rp, const UBYTE *src, WORD srcBit, WORD srcMod,
                   WORD x, WORD y, WORD w, WORD h);
 
@@ -1180,6 +1189,15 @@ LONG h_RectFill(struct Regs *r)
 #endif
     if (!rp_is_prism(rp))
         return 0;
+    /* A solid fill in the foreground pen (window clears, Workbench, most
+     * of what programs do) has nothing to decide per pixel: straight from
+     * the ClipRect walk to the fill primitive, without the pattern and
+     * draw-mode machinery of do_rectfill. */
+    if (!rp->AreaPtrn && !(rp->DrawMode & (COMPLEMENT | INVERSVID)) && RW(2) >= RW(0) && RW(3) >= RW(1)) {
+        clip_rp_q(rp, RW(0), RW(1), RW(2), RW(3), solid_cb, rp,
+                  (LONG)(RW(2) - RW(0) + 1) * (RW(3) - RW(1) + 1) <= QUICK_AREA);
+        return 1;
+    }
     do_rectfill(rp, RW(0), RW(1), RW(2), RW(3), NULL, 0);
 #ifdef PRISM_TRACE
     dbg("  < RectFill\n");
@@ -1426,6 +1444,49 @@ out:
 pass:
     QUICK_PERMIT();
     return 2;
+}
+
+/* ReadPixel's short cut (see stubs.S), the same way: a visible pixel of an
+ * 8-bit bitmap (16-bit pens need the pen table search), the locks free or
+ * ours. Returns the pen or -1, or -2 to hand the call to h_ReadPixel. */
+LONG f_ReadPixel(struct RastPort *rp, LONG ax, LONG ay)
+{
+    struct PBitMap *p;
+    struct Layer *L;
+    const struct Task *me;
+    WORD x = ax, y = ay;
+    LONG res = -1;
+
+    if (!(p = pbm_get(rp->BitMap)) || p->bpp != 1 || p == shadow)
+        return -2;
+    L = rp->Layer;
+    me = SysBase->ThisTask;
+    QUICK_FORBID();
+    if ((L && !sem_ours(&L->Lock, me)) || !sem_ours(&lock, me))
+        goto pass;
+    if (L) {
+        struct ClipRect *cr;
+        x += L->bounds.MinX - L->Scroll_X;
+        y += L->bounds.MinY - L->Scroll_Y;
+        for (cr = L->ClipRect; cr; cr = cr->Next)
+            if (x >= cr->bounds.MinX && x <= cr->bounds.MaxX &&
+                y >= cr->bounds.MinY && y <= cr->bounds.MaxY)
+                break;
+        if (!cr)
+            goto out;
+        if (cr->obscured)
+            goto pass;
+    } else if (x < 0 || y < 0 || x >= p->w || y >= p->h) {
+        goto out;
+    }
+    SW_CLEAR(p, x, y, x, y);                 /* not the software pointer's pixel */
+    res = p->pix[(ULONG)y * p->bpr + x];
+out:
+    QUICK_PERMIT();
+    return res;
+pass:
+    QUICK_PERMIT();
+    return -2;
 }
 
 /* WritePixel(rp a1, x d0, y d1) -> 0 or -1 */
@@ -2249,8 +2310,8 @@ LONG h_Text(struct Regs *r)
      * row - no extent pass, no shifting, rows contiguous for the chip. */
     if (tf->tf_XSize == 8 && !(tf->tf_Flags & FPF_PROPORTIONAL) && !kern && !space &&
         !style && !rp->TxSpacing && count <= 256 && (ULONG)count * tf->tf_YSize + 4 <= TEXT_TMPL) {
-        UWORD *off = (UWORD *)(pool + TEXT_TMPL);
-        UBYTE *msk = pool + TEXT_TMPL + 512, gy;
+        WORD *off = (WORD *)(pool + TEXT_TMPL);     /* byte offsets, under 32 K */
+        UBYTE *msk = pool + TEXT_TMPL + 512, gy, full = 1;
         for (i = 0; i < count; i++) {
             ULONG l = loc[glyph_index(tf, str[i])];
             UWORD bo = l >> 16, bw = l & 0xffff;
@@ -2258,13 +2319,26 @@ LONG h_Text(struct Regs *r)
                 break;
             off[i] = bo >> 3;
             msk[i] = (UBYTE)(0xff00 >> bw);
+            if (bw != 8)
+                full = 0;
         }
         if (i == count) {
             const UBYTE *cd = (const UBYTE *)tf->tf_CharData;
             UBYTE *o = stackbuf;
-            for (gy = 0; gy < tf->tf_YSize; gy++, cd += tf->tf_Modulo)
-                for (i = 0; i < count; i++)
-                    *o++ = cd[off[i]] & msk[i];
+            if (full) {
+                /* every glyph a whole byte wide (topaz 8 is): the gather is
+                 * one read and one write a byte, a quarter of Text's time
+                 * on the 68030 before (profiled 2026-10-11) */
+                for (gy = 0; gy < tf->tf_YSize; gy++, cd += tf->tf_Modulo) {
+                    const WORD *op = off;
+                    UBYTE *e = o + count;
+                    while (o < e)
+                        *o++ = cd[*op++];
+                }
+            } else
+                for (gy = 0; gy < tf->tf_YSize; gy++, cd += tf->tf_Modulo)
+                    for (i = 0; i < count; i++)
+                        *o++ = cd[off[i]] & msk[i];
             top = rp->cp_y - tf->tf_Baseline;
             t.rp = rp;
             t.src = stackbuf;

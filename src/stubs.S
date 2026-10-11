@@ -137,7 +137,38 @@ _stub_WritePixel:
         move.l  (sp)+,d1
         movea.l (sp)+,a0
         BODY WritePixel
-        PATCH_RP ReadPixel, a1, a0
+| ReadPixel(rp a1, x d0, y d1): the same short cut, f_ReadPixel returns the
+| pen or -1, or -2 for "not one of mine"
+        .globl _stub_ReadPixel
+_stub_ReadPixel:
+        move.l  a0,-(sp)
+        movea.l 4(a1),a0
+        btst    #7,4(a0)
+        bne.s   3f
+        movea.l 8(a0),a0
+        cmpa.l  _chipTop,a0
+        bcc.s   3f
+        movea.l (sp)+,a0
+        move.l  _o_ReadPixel,-(sp)
+        rts
+3:      move.l  d1,-(sp)
+        move.l  d0,-(sp)
+        move.l  a1,-(sp)
+        addq.l  #1,_inPatch
+        jsr     _f_ReadPixel
+        subq.l  #1,_inPatch
+        movea.l (sp)+,a1
+        addq.l  #2,d0
+        beq.s   4f
+        subq.l  #2,d0
+        addq.l  #4,sp
+        move.l  (sp)+,d1
+        movea.l (sp)+,a0
+        rts
+4:      move.l  (sp)+,d0
+        move.l  (sp)+,d1
+        movea.l (sp)+,a0
+        BODY ReadPixel
         PATCH_RP SetRast, a1, a0
         PATCH_RP ScrollRaster, a1, a0
         PATCH_RP ScrollRasterBF, a1, a0
