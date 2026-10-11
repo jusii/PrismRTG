@@ -10,15 +10,20 @@
 #include <string.h>
 #include "driver_module.h"
 extern struct ExecBase *SysBase;
-static struct PrismDriverRequest *active;
-static struct MsgPort *replies;
-static BOOL stalled;
-static struct Task *childTask;
+/* One driver process per board PrismD drives (multi-board.md): each
+ * slot is a running driver, or the one that timed out at start-up. */
+#define DRIVER_SLOTS 2
+static struct Slot {
+    struct PrismDriverRequest *active;
+    struct MsgPort *replies;
+    BOOL stalled;
+    struct Task *childTask;
+} slots[DRIVER_SLOTS];
 
 /* Is the driver process still there? One that ends without replying (its
  * startup failed, or BOARD= named some other program) must not be waited
  * for. */
-static BOOL child_alive(void)
+static BOOL child_alive(struct Task *childTask)
 {
     struct Node *n;
     BOOL alive = FALSE;
@@ -37,9 +42,17 @@ BOOL driver_open(struct PrismBoard *b,const char *name,const struct PrismDriverC
     struct PrismDriverRequest *r;
     struct MsgPort *port;
     struct Process *child;
+    struct Task *childTask;
+    struct Slot *sl=NULL;
     BPTR segment,input;
     ULONG ticks;
-    if(active || stalled || !name || strlen(name)>32 || strpbrk(name,"/:\\")) return FALSE;
+    int k;
+    /* a free slot; none while a timed-out driver may still answer */
+    for(k=0;k<DRIVER_SLOTS;k++) {
+        if(slots[k].stalled) return FALSE;
+        if(!sl && !slots[k].active) sl=&slots[k];
+    }
+    if(!sl || !name || strlen(name)>32 || strpbrk(name,"/:\\")) return FALSE;
     /* Drivers next to the program first: a build run from its own drawer
      * must not pick up the installed (older) modules. At boot PrismD is
      * C:PrismD, so this finds nothing and LIBS:Prism is used. */
@@ -77,7 +90,7 @@ BOOL driver_open(struct PrismBoard *b,const char *name,const struct PrismDriverC
     childTask=&child->pr_Task;
     for(ticks=0;ticks<1500;ticks++) {
         if(GetMsg(port)) break;
-        if(!child_alive()) {
+        if(!child_alive(childTask)) {
             if(GetMsg(port)) break;
             printf("PrismD: %s driver ended without answering\n",name);
             DeleteMsgPort(port);FreeVec(r);return FALSE;
@@ -87,7 +100,7 @@ BOOL driver_open(struct PrismBoard *b,const char *name,const struct PrismDriverC
     if(ticks==1500) {
         /* Do not exit while a tardy probe can still write diagnostics to
          * our borrowed output. driver_close waits for its final reply. */
-        stalled=TRUE;r->cancelled=TRUE;active=r;replies=port;
+        sl->stalled=TRUE;r->cancelled=TRUE;sl->active=r;sl->replies=port;sl->childTask=childTask;
         puts("PrismD: driver startup timed out; waiting for safe release");
         return FALSE;
     }
@@ -101,31 +114,38 @@ BOOL driver_open(struct PrismBoard *b,const char *name,const struct PrismDriverC
         else printf("PrismD: %s driver startup was cancelled\n",name);
         DeleteMsgPort(port);FreeVec(r);return FALSE;
     }
-    *b=r->board;active=r;replies=port;return TRUE;
+    *b=r->board;sl->active=r;sl->replies=port;sl->childTask=childTask;return TRUE;
 }
-void driver_close(void)
+static void slot_close(struct Slot *sl)
 {
     struct Message stop;
-    if(!active) return;
+    if(!sl->active) return;
     fflush(stdout);
-    if(stalled) {
+    if(sl->stalled) {
         /* A READY reply can race the timeout. In that case the child is
          * waiting for STOP, rather than having acknowledged cancellation. */
-        while(!GetMsg(replies)) {
-            if(!child_alive() && !GetMsg(replies)) {
+        while(!GetMsg(sl->replies)) {
+            if(!child_alive(sl->childTask) && !GetMsg(sl->replies)) {
                 /* it ended without a reply: nothing more will come */
-                DeleteMsgPort(replies);FreeVec(active);active=NULL;replies=NULL;stalled=FALSE;
+                DeleteMsgPort(sl->replies);FreeVec(sl->active);
+                sl->active=NULL;sl->replies=NULL;sl->stalled=FALSE;
                 return;
             }
             Delay(5);
         }
     }
-    if(!stalled || (active->status==PRD_READY && active->control)) {
-        memset(&stop,0,sizeof(stop));stop.mn_Length=sizeof(stop);stop.mn_ReplyPort=replies;
-        PutMsg(active->control,&stop);
-        WaitPort(replies);GetMsg(replies);
+    if(!sl->stalled || (sl->active->status==PRD_READY && sl->active->control)) {
+        memset(&stop,0,sizeof(stop));stop.mn_Length=sizeof(stop);stop.mn_ReplyPort=sl->replies;
+        PutMsg(sl->active->control,&stop);
+        WaitPort(sl->replies);GetMsg(sl->replies);
     }
-    DeleteMsgPort(replies);FreeVec(active);active=NULL;replies=NULL;stalled=FALSE;
+    DeleteMsgPort(sl->replies);FreeVec(sl->active);sl->active=NULL;sl->replies=NULL;sl->stalled=FALSE;
+}
+/* every driver, the last started first */
+void driver_close(void)
+{
+    int k;
+    for(k=DRIVER_SLOTS-1;k>=0;k--) slot_close(&slots[k]);
 }
 
 /* The board is on Auto and the supplied native drivers found nothing: try

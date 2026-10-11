@@ -59,8 +59,10 @@ struct IntuitionBase *IntuitionBase;
  * main. Our explicit OpenLibrary below holds an additional reference. */
 struct ExpansionBase *ExpansionBase;
 
-struct PrismBoard board;
-struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 } };
+struct PrismBoard board;                 /* card 0's */
+static struct PrismBoard board2;         /* card 1's, when there is a second board */
+struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 }, { &board2, 0, 1 } };
+static UBYTE ncards = 1;
 
 /* libnix's write() calls __chkabort(), which exits the program on Ctrl-C.
  * PrismD must see Ctrl-C itself and take its patches out first. */
@@ -204,7 +206,7 @@ struct CardState {
     int nblk;
     struct PScreen *shown;              /* screen the card is showing        */
     struct ViewPort *shownVP;
-    struct ModeRec *cardMode;           /* mode the card is set to           */
+    struct ModeRec *curMode;            /* mode the card is set to           */
     struct PBitMap *shownPbm;           /* bitmap the card scans out         */
     ULONG showStamp;
     BOOL rtgOn;
@@ -217,12 +219,9 @@ struct CardState {
 };
 static struct CardState cst[MAX_CARDS];
 
-#define modes        (cst[0].modes)
-#define nmodes       (cst[0].nmodes)
-#define prismMonitor (cst[0].monitor)
 #define shown        (cst[0].shown)
 #define shownVP      (cst[0].shownVP)
-#define cardMode     (cst[0].cardMode)
+#define cardMode     (cst[0].curMode)
 #define shownPbm     (cst[0].shownPbm)
 #define showStamp    (cst[0].showStamp)
 #define rtgOn        (cst[0].rtgOn)
@@ -233,26 +232,29 @@ static struct CardState cst[MAX_CARDS];
 #define testRgb      (cst[0].testRgb)
 #define testPal      (cst[0].testPal)
 
-static char monName[] = "prism.monitor";
+static char *const monName[MAX_CARDS] = { "prism.monitor", "prism2.monitor" };
 
 static struct ModeRec *mode_by_id(ULONG id)
 {
-    ULONG i;
-    if (!IS_PRISM_ID(id))
+    ULONG i, c = PRISM_ID_CARD(id);
+    if (!IS_PRISM_ID(id) || c >= ncards)
         return NULL;
-    for (i = 0; i < nmodes; i++)
-        if (modes[i].id == id)
-            return &modes[i];
+    for (i = 0; i < cst[c].nmodes; i++)
+        if (cst[c].modes[i].id == id)
+            return &cst[c].modes[i];
     return NULL;
 }
 
 static struct ModeRec *mode_by_handle(APTR h)
 {
-    ULONG d = (ULONG)h - (ULONG)modes;
-    if ((ULONG)h < (ULONG)modes || d >= nmodes * sizeof(struct ModeRec) ||
-        d % sizeof(struct ModeRec))
-        return NULL;
-    return (struct ModeRec *)h;
+    UBYTE c;
+    for (c = 0; c < ncards; c++) {
+        ULONG d = (ULONG)h - (ULONG)cst[c].modes;
+        if ((ULONG)h >= (ULONG)cst[c].modes && d < cst[c].nmodes * sizeof(struct ModeRec) &&
+            !(d % sizeof(struct ModeRec)))
+            return (struct ModeRec *)h;
+    }
+    return NULL;
 }
 
 /* One ModeRec per prefs slot the user left on and the board can show.
@@ -263,7 +265,7 @@ static struct ModeRec *mode_by_handle(APTR h)
  * 24 = three bytes a pixel, 32 = four; they are separate slots because on
  * the GD5434 they behave differently (32-bit has blitter text and fills,
  * 24-bit copies faster) and the user chooses. */
-static UBYTE board_format(UBYTE bits, UBYTE nth)
+static UBYTE board_format(struct PrismBoard *b, UBYTE bits, UBYTE nth)
 {
     static const UBYTE f16[] = { PF_RGB565BE, PF_RGB565LE, PF_BGR565LE };
     static const UBYTE f24[] = { PF_BGR24, PF_RGB24 };
@@ -276,53 +278,55 @@ static UBYTE board_format(UBYTE bits, UBYTE nth)
     if (bits == 8)
         return nth ? PF_COUNT : PF_CLUT8;
     for (i = 0; i < n; i++)
-        if ((board.formats & PF_BIT(f[i])) && !nth--)
+        if ((b->formats & PF_BIT(f[i])) && !nth--)
             return f[i];
     return PF_COUNT;
 }
 
 /* fill r->m for slot i in the first format the board accepts */
-static BOOL mode_fits(struct ModeRec *r, ULONG i, UBYTE bits, UBYTE hz)
+static BOOL mode_fits(struct PrismBoard *b, struct ModeRec *r, ULONG i, UBYTE bits, UBYTE hz)
 {
     UBYTE nth, fmt;
-    for (nth = 0; (fmt = board_format(bits, nth)) != PF_COUNT; nth++) {
+    for (nth = 0; (fmt = board_format(b, bits, nth)) != PF_COUNT; nth++) {
         memset(&r->m, 0, sizeof(r->m));
         r->m.width = prefs_sizes[PREFS_SIZE(i)][0];
         r->m.height = prefs_sizes[PREFS_SIZE(i)][1];
         r->m.format = fmt;
         r->m.refresh = hz;
-        if (board.checkMode(&board, &r->m))
+        if (b->checkMode(b, &r->m))
             return TRUE;
     }
     return FALSE;
 }
 
-static void build_modes(void)
+static void build_modes(struct PrismCard *c)
 {
+    struct CardState *cs = &cst[c->index];
     ULONG i;
 
-    for (i = 0; i < PREFS_NMODES && nmodes < MAX_MODES; i++) {
-        struct ModeRec *r = &modes[nmodes];
+    for (i = 0; i < PREFS_NMODES && cs->nmodes < MAX_MODES; i++) {
+        struct ModeRec *r = &cs->modes[cs->nmodes];
         UBYTE bits = prefs_depths[PREFS_DEPTH(i)];
 
         if (!prefs.on[i])
             continue;
         memset(r, 0, sizeof(*r));
-        if (!mode_fits(r, i, bits, prefs.hz[i])) {
+        if (!mode_fits(c->b, r, i, bits, prefs.hz[i])) {
             if (!prefs.hz[i])
                 continue;
             printf("PrismD: %ux%u %u-bit can't do %u Hz, using its default\n",
                    r->m.width, r->m.height, bits, prefs.hz[i]);
-            if (!mode_fits(r, i, bits, 0))
+            if (!mode_fits(c->b, r, i, bits, 0))
                 continue;
         }
-        r->id = PRISM_MONITOR_ID | PREFS_IDLOW(i);
+        r->id = PRISM_CARD_ID(c->index) | PREFS_IDLOW(i);
         r->maxDepth = 8;
         r->bpp = pf_bpp(r->m.format);
-        r->card = &cards[0];
+        r->card = c;
         r->dimDepth = r->bpp == 4 ? 32 : bits;
-        sprintf(r->name, "PRISM:%ux%u %ubit", r->m.width, r->m.height, r->bpp == 4 ? 32 : bits);
-        nmodes++;
+        sprintf(r->name, "PRISM%s:%ux%u %ubit", c->index ? "2" : "", r->m.width, r->m.height,
+                r->bpp == 4 ? 32 : bits);
+        cs->nmodes++;
     }
 }
 
@@ -811,12 +815,21 @@ static ULONG P_NextDisplayInfo(ULONG id __asm("d0"))
     ENTER();
     if (IS_PRISM_ID(id)) {
         struct ModeRec *m = mode_by_id(id);
-        ULONG i = m ? (ULONG)(m - modes) + 1 : nmodes;
-        r = (i < nmodes) ? modes[i].id : INVALID_ID;
+        ULONG c = PRISM_ID_CARD(id);
+        ULONG i = m ? (ULONG)(m - cst[c].modes) + 1 : cst[c].nmodes;
+        r = INVALID_ID;
+        if (c < ncards && i < cst[c].nmodes)
+            r = cst[c].modes[i].id;
+        else
+            for (c++; c < ncards && r == INVALID_ID; c++)
+                if (cst[c].nmodes)
+                    r = cst[c].modes[0].id;
     } else {
+        ULONG c;
         r = c_d0(o_NextDisplayInfo, GfxBase, id);
-        if (r == INVALID_ID && nmodes)
-            r = modes[0].id;
+        for (c = 0; c < ncards && r == INVALID_ID; c++)
+            if (cst[c].nmodes)
+                r = cst[c].modes[0].id;
     }
     LEAVE();
     return r;
@@ -940,7 +953,7 @@ static ULONG P_GetDisplayInfoData(APTR h __asm("a0"), APTR buf __asm("a1"),
     case DTAG_MNTR:
         len = sizeof(u.mi);
         qhdr(&u.mi.Header, tag, r->id, len);
-        u.mi.Mspc = &prismMonitor;
+        u.mi.Mspc = &cst[r->card->index].monitor;
         u.mi.ViewResolution.x = PRISM_TICKS;
         u.mi.ViewResolution.y = PRISM_TICKS;
         u.mi.ViewPositionRange.MaxX = r->m.width - 1;
@@ -974,13 +987,19 @@ static ULONG P_GetDisplayInfoData(APTR h __asm("a0"), APTR buf __asm("a1"),
 
 static struct MonitorSpec *P_OpenMonitor(CONST_STRPTR name __asm("a1"), ULONG id __asm("d0"))
 {
-    struct MonitorSpec *r;
+    struct MonitorSpec *r = NULL;
+    struct ModeRec *m;
+    UBYTE c;
     ENTER();
-    if ((name && !strcmp((const char *)name, monName)) || (!name && mode_by_id(id))) {
+    for (c = 0; c < ncards && !r; c++)
+        if (name && !strcmp((const char *)name, monName[c]))
+            r = &cst[c].monitor;
+    if (!r && !name && (m = mode_by_id(id)))
+        r = &cst[m->card->index].monitor;
+    if (r) {
         Forbid();
-        prismMonitor.ms_OpenCount++;
+        r->ms_OpenCount++;
         Permit();
-        r = &prismMonitor;
     } else {
         r = (struct MonitorSpec *)c_a1d0(o_OpenMonitor, GfxBase, (APTR)name, id);
     }
@@ -994,10 +1013,10 @@ static BOOL P_CloseMonitor(struct MonitorSpec *ms __asm("a0"))
 {
     BOOL r;
     ENTER();
-    if (ms == &prismMonitor) {
+    if (ms == &cst[0].monitor || (ncards > 1 && ms == &cst[1].monitor)) {
         Forbid();
-        if (prismMonitor.ms_OpenCount)
-            prismMonitor.ms_OpenCount--;
+        if (ms->ms_OpenCount)
+            ms->ms_OpenCount--;
         Permit();
         r = TRUE;
     } else {
@@ -1692,7 +1711,7 @@ static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const ch
 
     if (testPbm)
         return PRISM_TEST_BUSY;
-    for (nth = 0; (fmt = board_format(bits, nth)) != PF_COUNT; nth++) {
+    for (nth = 0; (fmt = board_format(&board, bits, nth)) != PF_COUNT; nth++) {
         memset(&m, 0, sizeof(m));
         m.width = width;
         m.height = height;
@@ -2173,6 +2192,7 @@ int main(void)
     const char *want;
     BOOL found = FALSE;
     ULONG i;
+    UBYTE k;
     int rc = 20;
 
     /* the linker's --gc-sections drops an unreferenced $VER string (beta 3
@@ -2244,11 +2264,18 @@ int main(void)
         strcpy(config.card,card);strcpy(config.monitor,monitor);
         if(want) found=driver_open(&board,want,&config);
         else {
+            const char *second=NULL;
             found=driver_open(&board,"PICASSO2",&config);
-            if(!found) found=driver_open(&board,"ZZ9000",&config);
+            if(found) second="ZZ9000";
+            else if((found=driver_open(&board,"ZZ9000",&config))) second="PICASSO2";
             /* then any other driver installed (a new board's): the P96
              * and UAE adapters stay explicit choices, they claim contexts */
             if(!found) found=driver_scan(&board,&config);
+            /* Auto drives a second board too, if the other supplied
+             * driver finds one (multi-board.md): its screens get their
+             * own monitor, PRISM2:. The first board is as before. */
+            if(found && second && driver_open(&board2,second,&config))
+                ncards=2;
         }
     }
     if (!found) {
@@ -2256,47 +2283,63 @@ int main(void)
         rc = 5;
         goto out;
     }
-    board_defaults(&board);
-    if (!prefs.blitter)
-        board.flags |= PBF_SOFTWARE;        /* every blitter path checks it */
-    build_modes();
-    if (!nmodes) {
+    for (k = 0; k < ncards; k++) {
+        board_defaults(cards[k].b);
+        if (!prefs.blitter)
+            cards[k].b->flags |= PBF_SOFTWARE;   /* every blitter path checks it */
+        build_modes(&cards[k]);
+    }
+    if (!cst[0].nmodes) {
         printf("PrismD: %s offers no usable modes\n", board.name);
         goto out;
+    }
+    if (ncards > 1 && !cst[1].nmodes) {
+        printf("PrismD: %s offers no usable modes; only %s is used\n", board2.name, board.name);
+        ncards = 1;
     }
 
     InitSemaphore(&lock);
 
-    /* Program a mode now, with the monitor still showing the Amiga: a
-     * cold Cirrus chip drops every CPU write to VRAM until its linear
-     * window is set up, and screens are drawn before they are shown. */
-    {
-        struct PrismMode m = modes[0].m;
-        if (!board.setMode(&board, &m)) { puts("PrismD: initial mode failed");goto out; }
-        if (prefs.blitter && board.modeReady) board.modeReady(&board);
-        selftest_text(&cards[0]);
-        board.setSwitch(&board, FALSE);
-        cardMode = &modes[0];
+    for (k = 0; k < ncards; k++) {
+        struct PrismBoard *B = cards[k].b;
+        struct CardState *cs = &cst[k];
+        /* Program a mode now, with the monitor still showing the Amiga: a
+         * cold Cirrus chip drops every CPU write to VRAM until its linear
+         * window is set up, and screens are drawn before they are shown. */
+        struct PrismMode m = cs->modes[0].m;
+        if (!B->setMode(B, &m)) {
+            if (!k) { puts("PrismD: initial mode failed");goto out; }
+            printf("PrismD: %s: initial mode failed; only %s is used\n", B->name, board.name);
+            ncards = 1;
+            break;
+        }
+        if (prefs.blitter && B->modeReady) B->modeReady(B);
+        selftest_text(&cards[k]);
+        B->setSwitch(B, FALSE);
+        cs->curMode = &cs->modes[0];
+        /* A copy of the system's monitor, but with a list and a semaphore of
+         * its own: copied, they would point into graphics' own MonitorSpec. */
+        CopyMem(GfxBase->default_monitor, &cs->monitor, sizeof(cs->monitor));
+        cs->monitor.ms_Node.xln_Name = monName[k];
+        cs->monitor.ms_OpenCount = 0;
+        {
+            struct List *l = &cs->monitor.DisplayInfoDataBase;
+            l->lh_Head = (struct Node *)&l->lh_Tail;
+            l->lh_Tail = NULL;
+            l->lh_TailPred = (struct Node *)&l->lh_Head;
+        }
+        InitSemaphore(&cs->monitor.DisplayInfoDataBaseSemaphore);
     }
-    /* A copy of the system's monitor, but with a list and a semaphore of
-     * its own: copied, they would point into graphics' own MonitorSpec. */
-    CopyMem(GfxBase->default_monitor, &prismMonitor, sizeof(prismMonitor));
-    prismMonitor.ms_Node.xln_Name = monName;
-    prismMonitor.ms_OpenCount = 0;
-    {
-        struct List *l = &prismMonitor.DisplayInfoDataBase;
-        l->lh_Head = (struct Node *)&l->lh_Tail;
-        l->lh_Tail = NULL;
-        l->lh_TailPred = (struct Node *)&l->lh_Head;
-    }
-    InitSemaphore(&prismMonitor.DisplayInfoDataBaseSemaphore);
 
     STAGE("board found, modes built");
-    printf("PrismD: %s, %lu KB VRAM, modes:\n", board.name,
-           (unsigned long)(board.vramSize >> 10));
-    for (i = 0; i < nmodes; i++)
-        printf("  $%08lx %s %u Hz\n", (unsigned long)modes[i].id, modes[i].name,
-               modes[i].m.refresh);
+    for (k = 0; k < ncards; k++) {
+        struct CardState *cs = &cst[k];
+        printf("PrismD: %s%s, %lu KB VRAM, modes:\n", k ? "second board: " : "", cards[k].b->name,
+               (unsigned long)(cards[k].b->vramSize >> 10));
+        for (i = 0; i < cs->nmodes; i++)
+            printf("  $%08lx %s %u Hz\n", (unsigned long)cs->modes[i].id, cs->modes[i].name,
+                   cs->modes[i].m.refresh);
+    }
     if (!prefs.blitter)
         printf("PrismD: blitter off (PrismPrefs)\n");
 
@@ -2324,7 +2367,7 @@ int main(void)
     sem.version = PRISM_VERSION;
     sem.boardName = board.name;
     sem.task = FindTask(NULL);
-    sem.numModes = nmodes;
+    sem.numModes = prism_mode_count();
     sem.screenInfo = screen_info;
     sem.testBegin = test_begin;
     sem.testEnd = test_end;
@@ -2445,24 +2488,32 @@ out:
 
 ULONG prism_mode_count(void)
 {
-    return nmodes;
+    return cst[0].nmodes + (ncards > 1 ? cst[1].nmodes : 0);
 }
 
 BOOL prism_mode(ULONG i, struct PrismModeInfo *mi)
 {
-    if (i >= nmodes)
+    struct ModeRec *r;
+    if (i < cst[0].nmodes)
+        r = &cst[0].modes[i];
+    else if (ncards > 1 && i - cst[0].nmodes < cst[1].nmodes)
+        r = &cst[1].modes[i - cst[0].nmodes];
+    else
         return FALSE;
-    mi->id = modes[i].id;
-    mi->w = modes[i].m.width;
-    mi->h = modes[i].m.height;
-    mi->fmt = modes[i].m.format;
-    mi->bpp = modes[i].bpp;
-    mi->name = modes[i].name;
+    mi->id = r->id;
+    mi->w = r->m.width;
+    mi->h = r->m.height;
+    mi->fmt = r->m.format;
+    mi->bpp = r->bpp;
+    mi->name = r->name;
     return TRUE;
 }
 
 BOOL prism_mode_by_id(ULONG id, struct PrismModeInfo *mi)
 {
     struct ModeRec *r = mode_by_id(id);
-    return r ? prism_mode(r - modes, mi) : FALSE;
+    if (!r)
+        return FALSE;
+    return prism_mode((ULONG)(r - cst[r->card->index].modes) +
+                      (r->card->index ? cst[0].nmodes : 0), mi);
 }

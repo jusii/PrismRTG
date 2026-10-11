@@ -21,11 +21,14 @@
  * start never got that far: Prism is skipped once. */
 #define PRISM_BOOTFLAG    "ENVARC:Prism.booting"
 
-/* Prism ModeIDs: one "monitor", 0x7A00xxxx; low bits = depth slot << 8 |
- * size slot (prefs.h), so an ID never changes when other modes are off. */
+/* Prism ModeIDs: one "monitor" per board, 0x7A00xxxx for the first and
+ * 0x7A01xxxx for a second; low bits = depth slot << 8 | size slot
+ * (prefs.h), so an ID never changes when other modes are off. */
 #define PRISM_MONITOR_ID  0x7A000000UL
 #define PRISM_ID_MASK     0xFFFF0000UL
-#define IS_PRISM_ID(id)   (((id) & PRISM_ID_MASK) == PRISM_MONITOR_ID)
+#define PRISM_CARD_ID(n)  (PRISM_MONITOR_ID | ((ULONG)(n) << 16))
+#define PRISM_ID_CARD(id) (((ULONG)(id) >> 16) & 1)
+#define IS_PRISM_ID(id)   (((id) & 0xFFFE0000UL) == PRISM_MONITOR_ID)
 
 struct PrismScreenInfo {
     UBYTE  *vram;            /* 68k address of the screen's framebuffer  */
