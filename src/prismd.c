@@ -31,6 +31,7 @@
 #include <graphics/gfxbase.h>
 #include <graphics/displayinfo.h>
 #include <graphics/monitor.h>
+#include <graphics/modeid.h>
 #include <graphics/view.h>
 #include <intuition/intuitionbase.h>
 #include <intuition/screens.h>
@@ -1480,14 +1481,89 @@ tags:
     return s;
 }
 
+/* The name a program is known by in the promotion list: its command name
+ * (a CLI program) or its task name (started from Workbench). */
+static const char *program_name(char *buf, int n)
+{
+    struct Task *t = FindTask(NULL);
+    const char *s = t->tc_Node.ln_Name;
+    if (t->tc_Node.ln_Type == NT_PROCESS && ((struct Process *)t)->pr_CLI) {
+        struct CommandLineInterface *cli = BADDR(((struct Process *)t)->pr_CLI);
+        const UBYTE *b = cli ? BADDR(cli->cli_CommandName) : NULL;
+        if (b && b[0]) {
+            int len = b[0] < n - 1 ? b[0] : n - 1;
+            memcpy(buf, b + 1, len);
+            buf[len] = 0;
+            s = (const char *)FilePart((STRPTR)buf);
+        }
+    }
+    return s ? s : "?";
+}
+
+/* a mode of the chipset: the default monitor or one of the Amiga ones */
+static BOOL native_mode_id(ULONG id)
+{
+    ULONG mon = id & MONITOR_ID_MASK;
+    return mon == 0 || (mon >= NTSC_MONITOR_ID && mon <= DBLPAL_MONITOR_ID && (mon & 0x1000));
+}
+
+/* Screen mode promotion (PROMOTE= in the prefs): a screen asked for on
+ * the chipset opens on the primary board instead, in its smallest
+ * 256-colour mode that holds it. NULL: leave it to the chipset. */
+static struct ModeRec *promote_mode(struct NewScreen *ns, struct TagItem *tags,
+                                    struct TagItem *ext)
+{
+    struct CardState *cs;
+    struct ModeRec *best = NULL;
+    ULONG id, w, h, depth, i, area = ~0UL;
+    char buf[64];
+    const char *prog;
+    int k;
+
+    if (!ncards || !cst[0].nmodes)
+        return NULL;
+    id = tag_data(tags, ext, SA_DisplayID, INVALID_ID);
+    if (id != INVALID_ID && !native_mode_id(id))
+        return NULL;                             /* another RTG system's mode */
+    if ((ns && (ns->Type & CUSTOMBITMAP)) || tag_data(tags, ext, SA_BitMap, 0) ||
+        tag_data(tags, ext, SA_LikeWorkbench, FALSE))
+        return NULL;
+    prog = program_name(buf, sizeof(buf));
+    k = prefs_prog_find(&prefs, prog);
+    if (k >= 0 ? prefs.prog[k].keep : !prefs.promote)
+        return NULL;
+    depth = tag_data(tags, ext, SA_Depth, ns ? ns->Depth : 2);
+    if (depth > 8)
+        return NULL;
+    w = tag_data(tags, ext, SA_Width, ns ? (ULONG)(WORD)ns->Width : (ULONG)STDSCREENWIDTH);
+    h = tag_data(tags, ext, SA_Height, ns ? (ULONG)(WORD)ns->Height : (ULONG)STDSCREENHEIGHT);
+    if ((LONG)w <= 0 || w > 4096) w = 640;       /* STDSCREENWIDTH: the mode's */
+    if ((LONG)h <= 0 || h > 4096) h = 256;
+    cs = &cst[0];
+    for (i = 0; i < cs->nmodes; i++) {
+        struct ModeRec *mr = &cs->modes[i];
+        if (mr->bpp == 1 && mr->m.width >= w && mr->m.height >= h &&
+            (ULONG)mr->m.width * mr->m.height < area) {
+            area = (ULONG)mr->m.width * mr->m.height;
+            best = mr;
+        }
+    }
+    dbg("promote: %s asks %lux%lu depth %lu id %lx -> %s\n", prog, w, h, depth, id,
+        best ? best->name : "no mode holds it");
+    return best;
+}
+
 static struct ModeRec *wanted_mode(struct NewScreen *ns, struct TagItem *tags,
                                    struct TagItem **extOut)
 {
     struct TagItem *ext = NULL;
+    struct ModeRec *mr;
     if (ns && (ns->Type & NS_EXTENDED))
         ext = ((struct ExtNewScreen *)ns)->Extension;
     *extOut = ext;
-    return mode_by_id(tag_data(tags, ext, SA_DisplayID, INVALID_ID));
+    if (!(mr = mode_by_id(tag_data(tags, ext, SA_DisplayID, INVALID_ID))))
+        mr = promote_mode(ns, tags, ext);
+    return mr;
 }
 
 static struct Screen *P_OpenScreenTagList(struct NewScreen *ns __asm("a0"),

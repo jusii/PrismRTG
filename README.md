@@ -336,6 +336,16 @@ blitter off.
   It costs a few percent of drawing speed (WritePixel about 14%), and while a
   program draws over the pointer itself it is taken away and comes back a
   moment later.
+* **Screen mode promotion** ("Promote screens" in PrismPrefs, `PROMOTE=ON`)
+  opens a screen a program asks for on PAL, NTSC or another chipset
+  monitor on the board instead, in the smallest 256-colour mode that holds
+  it (a 320x200 game gets the 320x200 mode, a 640x256 one 640x400), at
+  the depth it asked for. The Programs list makes exceptions either way:
+  a program kept on the chipset with the switch on, or promoted with it
+  off (`KEEPPROG=` / `PROMOTEPROG=`, by command name or task name). The
+  screen is the mode's size, so a program that draws a 640x256 screen
+  edge to edge has a band left over; programs that bring their own bitmap
+  (`CUSTOMBITMAP`) or ask for more than 8 planes are left alone.
 * **Off unless switched on:** screen dragging (`DRAGGING=ON`) and
   Picasso96 PIP windows go through a compositor that redoes only what
   changed and copies the dragged screen with the card's blitter; a program

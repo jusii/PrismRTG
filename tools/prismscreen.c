@@ -206,8 +206,13 @@ int main(void)
         goto out;
     }
     if (!ps->screenInfo(s, &si)) {
-        printf("PrismScreen: not a Prism screen?\n");
+        /* a chipset mode (or one PrismD declined to promote): keep it open
+         * for the time asked so a test can see where it went */
+        printf("PrismScreen: not a Prism screen (mode $%08lx on the chipset), held %d s\n",
+               (unsigned long)GetVPModeID(&s->ViewPort), secs);
+        Delay(secs * 50);
         CloseScreen(s);
+        rc = 0;
         goto out;
     }
     printf("PrismScreen: %dx%d, VRAM $%08lx, %lu bytes/row\n", si.width, si.height,

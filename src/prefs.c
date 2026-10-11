@@ -60,6 +60,42 @@ static int onoff(const char *v)
     return same(v, "ON") || same(v, "YES") || same(v, "1");
 }
 
+int prefs_prog_find(const struct PrismPrefs *p, const char *name)
+{
+    int i;
+    for (i = 0; i < p->nprog; i++)
+        if (same(p->prog[i].name, name))
+            return i;
+    return -1;
+}
+
+BOOL prefs_prog_set(struct PrismPrefs *p, const char *name, BOOL keep)
+{
+    int i, n = strlen(name);
+    while (n && name[n - 1] == ' ')
+        n--;
+    if (!n || n > PREFS_PROGNAME)
+        return FALSE;
+    if ((i = prefs_prog_find(p, name)) < 0) {
+        if (p->nprog >= PREFS_NPROGS)
+            return FALSE;
+        i = p->nprog++;
+        memcpy(p->prog[i].name, name, n);
+        p->prog[i].name[n] = 0;
+    }
+    p->prog[i].keep = keep ? 1 : 0;
+    return TRUE;
+}
+
+void prefs_prog_remove(struct PrismPrefs *p, int i)
+{
+    if (i < 0 || i >= p->nprog)
+        return;
+    for (; i + 1 < p->nprog; i++)
+        p->prog[i] = p->prog[i + 1];
+    p->nprog--;
+}
+
 static void parse_mode(struct PrismPrefs *p, char *v)
 {
     unsigned w, h, d, hz = 0;
@@ -126,6 +162,10 @@ BOOL prefs_load(struct PrismPrefs *p, const char *path)
             p->clutBGR = same(v, "BGR");
         } else if (same(line, "MODE")) {
             parse_mode(p, v);
+        } else if (same(line, "PROMOTE")) {
+            p->promote = onoff(v);
+        } else if (same(line, "PROMOTEPROG") || same(line, "KEEPPROG")) {
+            prefs_prog_set(p, v, same(line, "KEEPPROG"));
         }
     }
     Close(f);
@@ -152,6 +192,9 @@ BOOL prefs_save(const struct PrismPrefs *p, const char *path)
     fprintf(f, "LOG=%s\n", p->log == 2 ? "SYNC" : p->log ? "ON" : "OFF");
     if (p->clutBGR)
         fprintf(f, "PALETTE=BGR\n");
+    fprintf(f, "PROMOTE=%s\n", p->promote ? "ON" : "OFF");
+    for (i = 0; i < p->nprog; i++)
+        fprintf(f, "%s=%s\n", p->prog[i].keep ? "KEEPPROG" : "PROMOTEPROG", p->prog[i].name);
     for (i = 0; i < PREFS_NMODES; i++)
         fprintf(f, "MODE=%ux%ux%u %s %u\n", prefs_sizes[PREFS_SIZE(i)][0],
                 prefs_sizes[PREFS_SIZE(i)][1], prefs_depths[PREFS_DEPTH(i)],

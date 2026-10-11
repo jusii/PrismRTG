@@ -108,6 +108,16 @@ Software pointer
   file) forces it, e.g. on a MiSTer.
   It costs a few percent of drawing speed.
 
+Screen mode promotion
+  "Promote screens" in PrismPrefs (PROMOTE=ON) opens a screen a program
+  asks for on PAL, NTSC or another chipset monitor on the board instead,
+  in the smallest 256-colour mode that holds it, at the depth asked for.
+  The Programs list makes exceptions: a program kept on the chipset with
+  the switch on, or promoted with it off (KEEPPROG= / PROMOTEPROG=, by
+  command name or task name). The screen is the mode's size, so a 640x256
+  screen drawn edge to edge leaves a band; programs with their own bitmap
+  or more than 8 planes are left alone. PrismD reads this when it starts.
+
 Dragging and PIP windows
   Vertical dragging between RTG screens (DRAGGING=ON) and P96 memory-window
   PIPs go through a compositor that redoes only what changed and copies the

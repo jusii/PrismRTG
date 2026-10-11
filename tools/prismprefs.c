@@ -35,7 +35,7 @@ static const char version[] __attribute__((used)) = "$VER: PrismPrefs 1.1b5 (10.
 
 enum { GAD_LIST = 1, GAD_ON, GAD_HZ, GAD_BOARD, GAD_BLIT, GAD_LOG,
        GAD_SAVE, GAD_USE, GAD_DEFAULTS, GAD_CANCEL, GAD_STATUS, GAD_TEST, GAD_BGR,
-       GAD_DRAG, GAD_SOFTPTR };
+       GAD_DRAG, GAD_SOFTPTR, GAD_PROMOTE, GAD_PLIST, GAD_PROG, GAD_PADD, GAD_PKEEP, GAD_PDEL };
 
 static STRPTR hzLabels[] = { "Default", "60 Hz", "70 Hz", "72 Hz", "75 Hz", NULL };
 /* the Board cycle: Auto three ways - every board PrismD finds (two at
@@ -53,9 +53,15 @@ struct Gui {
     APTR vi;
     struct Window *win;
     struct Gadget *glist, *gList, *gOn, *gHz, *gBoard, *gBlit, *gLog, *gBgr, *gDrag, *gSoft, *gStatus;
+    struct Gadget *gPromote, *gPList, *gProg;
     struct List modes;
     struct Node node[PREFS_NMODES];
     char text[PREFS_NMODES][48];
+    /* the promotion list: programs promoted or kept whatever the switch says */
+    struct List progs;
+    struct Node pnode[PREFS_NPROGS];
+    char ptext[PREFS_NPROGS][48];
+    LONG psel;                       /* selected program, -1 none              */
     struct PrismPrefs prefs;
     LONG sel;
     BOOL running;                    /* PrismD is up: show which modes are live */
@@ -157,6 +163,35 @@ static void build_list(struct Gui *g)
     }
 }
 
+static void prog_text(struct Gui *g, int i)
+{
+    sprintf(g->ptext[i], "%-28.28s %s", g->prefs.prog[i].name,
+            g->prefs.prog[i].keep ? "kept" : "promoted");
+}
+
+static void build_progs(struct Gui *g)
+{
+    int i;
+    g->progs.lh_Head = (struct Node *)&g->progs.lh_Tail;
+    g->progs.lh_Tail = NULL;
+    g->progs.lh_TailPred = (struct Node *)&g->progs.lh_Head;
+    for (i = 0; i < g->prefs.nprog; i++) {
+        prog_text(g, i);
+        g->pnode[i].ln_Name = g->ptext[i];
+        AddTail(&g->progs, &g->pnode[i]);
+    }
+}
+
+static void refresh_progs(struct Gui *g)
+{
+    GT_SetGadgetAttrs(g->gPList, g->win, NULL, GTLV_Labels, ~0UL, TAG_END);
+    build_progs(g);
+    if (g->psel >= g->prefs.nprog)
+        g->psel = g->prefs.nprog - 1;
+    GT_SetGadgetAttrs(g->gPList, g->win, NULL, GTLV_Labels, (ULONG)&g->progs,
+                      GTLV_Selected, g->psel < 0 ? ~0UL : (ULONG)g->psel, TAG_END);
+}
+
 static void set_status(struct Gui *g, const char *s)
 {
     strncpy(g->status, s, sizeof(g->status) - 1);
@@ -186,6 +221,7 @@ static void show_settings(struct Gui *g)
     GT_SetGadgetAttrs(g->gBgr, g->win, NULL, GTCB_Checked, (ULONG)p->clutBGR, TAG_END);
     GT_SetGadgetAttrs(g->gDrag, g->win, NULL, GTCB_Checked, (ULONG)p->dragging, TAG_END);
     GT_SetGadgetAttrs(g->gSoft, g->win, NULL, GTCB_Checked, (ULONG)p->softwarePointer, TAG_END);
+    GT_SetGadgetAttrs(g->gPromote, g->win, NULL, GTCB_Checked, (ULONG)p->promote, TAG_END);
 }
 
 static void running_status(struct Gui *g)
@@ -309,7 +345,7 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     WORD fw = tf->tf_XSize, fh = tf->tf_YSize, gh = fh + 6, row = gh + 4;
     WORD cl = g->scr->WBorLeft + 8, ct = g->scr->WBorTop + fh + 1 + 6;
     WORD listW = 38 * fw + 24, listH;
-    WORD rx, rw, y, bw, by;
+    WORD rx, rw, y, bw, by, py, plH;
 
     if (!(gad = CreateContext(&g->glist)))
         return FALSE;
@@ -319,7 +355,7 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
 
     /* right column: label width + gadgets */
     rx = cl + listW + 16 + 8 * fw;
-    rw = 14 * fw + 28;                  /* "Swap red/blue" beside its box */
+    rw = 15 * fw + 30;                  /* "Promote screens" beside its box */
 
     y = ct + fh + 2;
     ng.ng_LeftEdge = rx; ng.ng_TopEdge = y;
@@ -365,6 +401,13 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     gad = g->gSoft = CreateGadget(CHECKBOX_KIND, gad, &ng, GTCB_Scaled, TRUE,
                                   GTCB_Checked, (ULONG)g->prefs.softwarePointer, TAG_END);
 
+    /* screen mode promotion (PROMOTE=), its exceptions are the list below */
+    y += row;
+    ng.ng_TopEdge = y;
+    ng.ng_GadgetText = "Promote screens"; ng.ng_GadgetID = GAD_PROMOTE;
+    gad = g->gPromote = CreateGadget(CHECKBOX_KIND, gad, &ng, GTCB_Scaled, TRUE,
+                                     GTCB_Checked, (ULONG)g->prefs.promote, TAG_END);
+
     y += row;
     ng.ng_TopEdge = y; ng.ng_Width = rw; ng.ng_Height = gh;
     ng.ng_GadgetText = "Log"; ng.ng_Flags = PLACETEXT_LEFT; ng.ng_GadgetID = GAD_LOG;
@@ -376,8 +419,24 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     if (listH < 12 * fh + 4)
         listH = 12 * fh + 4;
 
+    /* the programs list under the modes, Promote / Keep / Remove beside it
+     * and the name being added below */
+    py = ct + fh + 2 + listH + 6 + fh + 2;
+    plH = 3 * row + 2;
+    ng.ng_LeftEdge = rx; ng.ng_Width = rw; ng.ng_Height = gh; ng.ng_Flags = PLACETEXT_IN;
+    ng.ng_TopEdge = py;           ng.ng_GadgetText = "Promote"; ng.ng_GadgetID = GAD_PADD;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    ng.ng_TopEdge = py + row;     ng.ng_GadgetText = "Keep";    ng.ng_GadgetID = GAD_PKEEP;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    ng.ng_TopEdge = py + 2 * row; ng.ng_GadgetText = "Remove";  ng.ng_GadgetID = GAD_PDEL;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+    ng.ng_LeftEdge = cl + 8 * fw; ng.ng_TopEdge = py + plH + 4;
+    ng.ng_Width = rx + rw - cl - 8 * fw; ng.ng_Height = gh;
+    ng.ng_GadgetText = "Program"; ng.ng_Flags = PLACETEXT_LEFT; ng.ng_GadgetID = GAD_PROG;
+    gad = g->gProg = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, PREFS_PROGNAME, TAG_END);
+
     /* status line, then the Save / Use / Defaults / Cancel row */
-    by = ct + fh + 2 + listH + 6;
+    by = py + plH + 4 + row + 2;
     ng.ng_LeftEdge = cl; ng.ng_TopEdge = by;
     ng.ng_Width = rx + rw - cl; ng.ng_Height = gh;
     ng.ng_GadgetText = NULL; ng.ng_Flags = 0; ng.ng_GadgetID = GAD_STATUS;
@@ -398,7 +457,12 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     ng.ng_LeftEdge = rx + rw - bw;           ng.ng_GadgetText = "Cancel";   ng.ng_GadgetID = GAD_CANCEL;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
 
-    /* listview last: its scroller sub-gadgets end the chain */
+    /* listviews last: their scroller sub-gadgets end the chain */
+    ng.ng_LeftEdge = cl; ng.ng_TopEdge = py;
+    ng.ng_Width = listW; ng.ng_Height = plH;
+    ng.ng_GadgetText = "Programs"; ng.ng_Flags = PLACETEXT_ABOVE | NG_HIGHLABEL; ng.ng_GadgetID = GAD_PLIST;
+    gad = g->gPList = CreateGadget(LISTVIEW_KIND, gad, &ng, GTLV_Labels, (ULONG)&g->progs,
+                                   GTLV_ShowSelected, 0, TAG_END);
     ng.ng_LeftEdge = cl; ng.ng_TopEdge = ct + fh + 2;
     ng.ng_Width = listW; ng.ng_Height = listH;
     ng.ng_GadgetText = "Modes"; ng.ng_Flags = PLACETEXT_ABOVE | NG_HIGHLABEL; ng.ng_GadgetID = GAD_LIST;
@@ -430,7 +494,7 @@ static BOOL open_window(struct Gui *g)
                   WFLG_SMART_REFRESH,
         WA_IDCMP, IDCMP_CLOSEWINDOW | IDCMP_REFRESHWINDOW | IDCMP_VANILLAKEY |
                   IDCMP_MOUSEBUTTONS |
-                  BUTTONIDCMP | CHECKBOXIDCMP | CYCLEIDCMP | LISTVIEWIDCMP,
+                  BUTTONIDCMP | CHECKBOXIDCMP | CYCLEIDCMP | LISTVIEWIDCMP | STRINGIDCMP,
         WA_Gadgets, (ULONG)g->glist,
         WA_PubScreen, (ULONG)g->scr,
         TAG_END);
@@ -512,6 +576,37 @@ static void event_loop(struct Gui *g)
                                   ? "Pointer drawn by PrismRTG (for boards without one)"
                                   : "Board's own pointer where it has one");
                     break;
+                case GAD_PROMOTE:
+                    g->prefs.promote = (gad->Flags & GFLG_SELECTED) ? 1 : 0;
+                    set_status(g, g->prefs.promote
+                                  ? "Screens asked for on the chipset open on the board (kept ones stay)"
+                                  : "Screens stay on the chipset (promoted programs still move)");
+                    break;
+                case GAD_PLIST:
+                    g->psel = code;
+                    if (code < g->prefs.nprog)
+                        GT_SetGadgetAttrs(g->gProg, g->win, NULL, GTST_String,
+                                          (ULONG)g->prefs.prog[code].name, TAG_END);
+                    break;
+                case GAD_PADD:
+                case GAD_PKEEP: {
+                    const char *nm = (const char *)((struct StringInfo *)g->gProg->SpecialInfo)->Buffer;
+                    if (prefs_prog_set(&g->prefs, nm, gad->GadgetID == GAD_PKEEP)) {
+                        g->psel = prefs_prog_find(&g->prefs, nm);
+                        refresh_progs(g);
+                        set_status(g, gad->GadgetID == GAD_PKEEP
+                                      ? "Kept on the chipset whatever the switch says"
+                                      : "Promoted to the board whatever the switch says");
+                    } else
+                        set_status(g, "Give a program name (31 characters at most); the list holds 16");
+                    break;
+                }
+                case GAD_PDEL:
+                    if (g->psel >= 0 && g->psel < g->prefs.nprog) {
+                        prefs_prog_remove(&g->prefs, g->psel);
+                        refresh_progs(g);
+                    }
+                    break;
                 case GAD_TEST:
                     /* with two boards: which one shows it */
                     if (g->boards > 1) {
@@ -534,6 +629,8 @@ static void event_loop(struct Gui *g)
                 case GAD_DEFAULTS:
                     prefs_default(&g->prefs);
                     refresh_list(g);
+                    g->psel = -1;
+                    refresh_progs(g);
                     show_settings(g);
                     set_status(g, "Defaults - every mode the board can show");
                     break;
@@ -601,6 +698,8 @@ int main(void)
 
     running_status(&g);
     build_list(&g);
+    build_progs(&g);
+    g.psel = -1;
     if (open_window(&g)) {
         event_loop(&g);
         rc = 0;

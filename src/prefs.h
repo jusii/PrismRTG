@@ -16,6 +16,15 @@
  *   LOG=ON|OFF
  *   PALETTE=RGB|BGR             (Piccolo/Spectrum only, see drv_picasso2.c)
  *   MODE=640x480x8 ON 72        (size x depth, ON/OFF, refresh Hz or 0)
+ *   PROMOTE=ON|OFF              (native-chipset screens open on the board)
+ *   PROMOTEPROG=<program>       (promoted even with PROMOTE=OFF)
+ *   KEEPPROG=<program>          (left on the chipset even with PROMOTE=ON)
+ *
+ * Promotion: a screen a program opens on a PAL, NTSC or other native
+ * monitor (or with no mode at all) is opened instead on the primary
+ * board's smallest 256-colour mode that holds it, at the depth asked for.
+ * The program's name is its command name (a CLI program) or its task name
+ * (started from Workbench), compared without regard to case.
  *
  * Every candidate mode has a fixed slot, and its ModeID comes from the
  * slot, so turning one mode off never renumbers the others (a saved
@@ -46,6 +55,13 @@ extern const UBYTE prefs_rates[PREFS_NRATES];    /* 0 = driver's default   */
 
 enum { PB_AUTO, PB_PICASSO2, PB_ZZ9000, PB_P96, PB_UAEGFX, PB_OTHER, PB_COUNT };
 #define PREFS_BOARDNAME 32           /* driver_open's limit on a name       */
+#define PREFS_NPROGS    16           /* promotion exceptions                */
+#define PREFS_PROGNAME  31
+
+struct PrefsProg {
+    char  name[PREFS_PROGNAME + 1];
+    UBYTE keep;                      /* 1: never promoted, 0: always promoted */
+};
 
 struct PrismPrefs {
     UBYTE board;                     /* PB_*                               */
@@ -62,11 +78,19 @@ struct PrismPrefs {
                                         board if there is one (multi-board.md) */
     UBYTE on[PREFS_NMODES];          /* mode offered                       */
     UBYTE hz[PREFS_NMODES];          /* refresh wanted, 0 = default        */
+    UBYTE promote;                   /* PROMOTE=ON: native screens on the board */
+    UBYTE nprog;
+    struct PrefsProg prog[PREFS_NPROGS];
     char p96card[256];
     char p96monitor[256];
 };
 
 void prefs_default(struct PrismPrefs *p);
+/* the program's entry in the promotion list, or -1 */
+int  prefs_prog_find(const struct PrismPrefs *p, const char *name);
+/* add or change an entry; FALSE when the list is full or the name is no good */
+BOOL prefs_prog_set(struct PrismPrefs *p, const char *name, BOOL keep);
+void prefs_prog_remove(struct PrismPrefs *p, int i);
 /* FALSE if the file is missing (p then holds the defaults) */
 BOOL prefs_load(struct PrismPrefs *p, const char *path);
 BOOL prefs_save(const struct PrismPrefs *p, const char *path);
