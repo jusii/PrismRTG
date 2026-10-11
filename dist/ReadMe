@@ -95,7 +95,11 @@ Two boards (new in 1.1 beta 6 - tested in an emulator so far)
   are PRISM:..., the second's PRISM2:...; pick a board by picking a mode
   (ScreenMode, a program's mode requester). Each board shows its own front
   screen, and the pointer is on the board of the screen in front.
-  Board "Auto, 1 board" in PrismPrefs (SECONDBOARD=OFF) keeps to one board;
+  Any two of the supported cards work, two of the same kind too. Either one
+  can be the primary (PRISM: modes, so Workbench): Board "Auto, swapped" in
+  PrismPrefs (PRIMARY=SECOND) makes the second board found the primary - say,
+  the card on the bigger monitor; the status line names the boards and their
+  expansion addresses. "Auto, 1 board" (SECONDBOARD=OFF) keeps to one board;
   with two, the Test button asks which board shows the test picture.
 
 Software pointer

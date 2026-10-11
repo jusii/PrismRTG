@@ -116,6 +116,8 @@ BOOL prefs_load(struct PrismPrefs *p, const char *path)
             p->dragging = onoff(v);
         } else if (same(line, "SECONDBOARD")) {
             p->second = onoff(v);
+        } else if (same(line, "PRIMARY")) {
+            p->swapBoards = same(v, "SECOND");
         } else if (same(line, "BLITTER")) {
             p->blitter = onoff(v);
         } else if (same(line, "LOG")) {
@@ -145,6 +147,7 @@ BOOL prefs_save(const struct PrismPrefs *p, const char *path)
     fprintf(f, "SOFTWAREPOINTER=%s\n", p->softwarePointer ? "ON" : "OFF");
     fprintf(f, "DRAGGING=%s\n", p->dragging ? "ON" : "OFF");
     fprintf(f, "SECONDBOARD=%s\n", p->second ? "ON" : "OFF");
+    fprintf(f, "PRIMARY=%s\n", p->swapBoards ? "SECOND" : "FIRST");
     fprintf(f, "BLITTER=%s\n", p->blitter ? "ON" : "OFF");
     fprintf(f, "LOG=%s\n", p->log == 2 ? "SYNC" : p->log ? "ON" : "OFF");
     if (p->clutBGR)

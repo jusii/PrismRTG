@@ -85,7 +85,19 @@ alignments averaged, as in the beta 5 speed work), and on the A4000 when it is a
 
 Then step 2 of the goal (one screen across both monitors) is its own design.
 
+## Two of a kind, and which board is the primary
+
+Two boards of the same kind work: every `driver_open` loads its own copy of the driver module,
+so the drivers' statics are per board, and a driver takes only a board no other driver process
+has claimed (`driver_find` / `driver_claim`: `cd_Driver` of its ConfigDevs, given back when the
+driver process ends). On Auto the second board is the other supplied driver's, else a second
+copy of the first one's driver.
+
+Either board can be the primary - the one with the `PRISM:` modes, so Workbench: `PRIMARY=SECOND`
+(PrismPrefs: Board "Auto, swapped") swaps the two after loading them (their `PrismBoard`
+records and driver slots; the drivers keep no pointer to those). `PrismSem.boardAddr[]` gives
+each board's expansion address, so two of one kind can be told apart.
+
 ## Not in this first version
 
-Two boards of the same kind (two ZZ9000s): the drivers keep per-board state in statics, so that
-needs driver changes too. Moving a screen from one board to the other while it is open.
+Moving a screen from one board to the other while it is open.

@@ -1409,19 +1409,23 @@ BOOL Picasso2_Probe(struct PrismBoard *b)
 
     for (i = 0; i < sizeof(p2_boards) / sizeof(p2_boards[0]); i++) {
         bd = &p2_boards[i];
+        /* the first of its kind no other driver process has taken (a
+         * second copy of this driver drives a second board) */
         if (!bd->memProd) {              /* one node with both inside */
-            if ((regs = FindConfigDev(NULL, bd->mfr, bd->regProd)) &&
+            if ((regs = driver_find(NULL, bd->mfr, bd->regProd)) &&
                 regs->cd_BoardSize >= 0x1000000) {
                 mem = regs;
                 break;
             }
-        } else if ((regs = FindConfigDev(NULL, bd->mfr, bd->regProd)) &&
-                   (mem = FindConfigDev(NULL, bd->mfr, bd->memProd)))
+        } else if ((regs = driver_find(NULL, bd->mfr, bd->regProd)) &&
+                   (mem = driver_find(NULL, bd->mfr, bd->memProd)))
             break;
         regs = mem = NULL;
     }
     if (!regs || !mem)
         return FALSE;
+    driver_claim(regs);                  /* given back when this driver ends */
+    driver_claim(mem);
 
     b->configDev = regs;
     b->regs      = (volatile UBYTE *)regs->cd_BoardAddr;

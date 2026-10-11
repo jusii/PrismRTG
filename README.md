@@ -171,8 +171,12 @@ switched on.
   the second's `PRISM2:...` (ModeIDs `$7A01xxxx`); a program or ScreenMode
   picks the board by picking a mode. Each board shows its own front screen,
   the pointer is on the board of the screen in front, and dragging works on
-  both. Board `Auto, 1 board` in PrismPrefs (`SECONDBOARD=OFF`) keeps to one
-  board; with two, the Test button asks which board shows the test picture.
+  both. Any two of the supported cards work, two of the same kind too. Either
+  can be the primary (the `PRISM:` modes, so Workbench): Board `Auto, swapped`
+  in PrismPrefs (`PRIMARY=SECOND`) makes the second board found the primary -
+  the status line names each board and its expansion address. `Auto, 1 board`
+  (`SECONDBOARD=OFF`) keeps to one board; with two, the Test button asks which
+  board shows the test picture.
   Design: `docs/multi-board.md`.
 
 Neither card lets software read what the monitor supports (the ZZ9000

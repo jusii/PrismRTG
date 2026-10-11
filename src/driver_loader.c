@@ -143,6 +143,13 @@ static void slot_close(struct Slot *sl)
     }
     DeleteMsgPort(sl->replies);FreeVec(sl->active);sl->active=NULL;sl->replies=NULL;sl->stalled=FALSE;
 }
+/* the two boards swapped places (PRIMARY=SECOND): their drivers too */
+void driver_swap_slots(void)
+{
+    struct Slot t=slots[0];
+    slots[0]=slots[1];
+    slots[1]=t;
+}
 void driver_close_slot(int n)
 {
     if(n>=0 && n<DRIVER_SLOTS) slot_close(&slots[n]);

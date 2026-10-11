@@ -152,6 +152,14 @@ struct PrismBoard {
 struct PrismDriverConfig;
 BOOL driver_probe(struct PrismBoard *b, const struct PrismDriverConfig *config);
 void driver_retain(void);
+/* A driver's probe takes only a board no other driver process has: it
+ * looks for one with driver_find (the next one of mfr/prod that is not
+ * claimed, after `after` or from the start with NULL) and claims what it
+ * takes with driver_claim (cd_Driver = this process). The framework
+ * gives the claims back when the driver process ends, so two copies of
+ * one driver drive two boards of a kind (multi-board.md). */
+struct ConfigDev *driver_find(struct ConfigDev *after, ULONG mfr, ULONG prod);
+void driver_claim(struct ConfigDev *cd);
 /* Fill the optional callbacks a driver left NULL (boardops.c). PrismD and
  * PrismTest call it on the board a driver returned. */
 void board_defaults(struct PrismBoard *b);

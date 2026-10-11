@@ -82,6 +82,7 @@ BOOL driver_scan(struct PrismBoard *, const struct PrismDriverConfig *);
 void driver_close(void);
 /* stop the driver of board n (0 or 1) - a second board PrismD drops */
 void driver_close_slot(int n);
+void driver_swap_slots(void);                /* PRIMARY=SECOND */
 /* TRUE while probing for a second board: no message when nothing is found */
 extern BOOL driverQuiet;
 /* Used by a claimed P96/UAE context after its final diagnostic is flushed. */

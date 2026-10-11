@@ -55,6 +55,9 @@ struct PrismPrefs {
     UBYTE softwarePointer;          /* override advertised hardware sprite */
     UBYTE dragging;                 /* opt in to software screen splits   */
     UBYTE clutBGR;                   /* PALETTE=BGR: load palettes blue first */
+    UBYTE swapBoards;                /* PRIMARY=SECOND: of the two boards Auto
+                                        finds, the second is the primary (the
+                                        PRISM: modes, Workbench) */
     UBYTE second;                    /* SECONDBOARD=: on Auto, also drive a second
                                         board if there is one (multi-board.md) */
     UBYTE on[PREFS_NMODES];          /* mode offered                       */

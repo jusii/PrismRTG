@@ -63,6 +63,7 @@ struct PrismBoard board;                 /* card 0's */
 static struct PrismBoard board2;         /* card 1's, when there is a second board */
 struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 }, { &board2, 0, 1 } };
 static UBYTE ncards = 1;
+static BOOL boardsSwapped;               /* PRIMARY=SECOND took effect */
 
 /* libnix's write() calls __chkabort(), which exits the program on Ctrl-C.
  * PrismD must see Ctrl-C itself and take its patches out first. */
@@ -2366,21 +2367,35 @@ int main(void)
         strcpy(config.card,card);strcpy(config.monitor,monitor);
         if(want) found=driver_open(&board,want,&config);
         else {
-            const char *second=NULL;
+            const char *first=NULL,*second=NULL;
             found=driver_open(&board,"PICASSO2",&config);
-            if(found) second="ZZ9000";
-            else if((found=driver_open(&board,"ZZ9000",&config))) second="PICASSO2";
+            if(found) { first="PICASSO2"; second="ZZ9000"; }
+            else if((found=driver_open(&board,"ZZ9000",&config))) { first="ZZ9000"; second="PICASSO2"; }
             /* then any other driver installed (a new board's): the P96
              * and UAE adapters stay explicit choices, they claim contexts */
             if(!found) found=driver_scan(&board,&config);
-            /* Auto drives a second board too, if the other supplied
-             * driver finds one (multi-board.md): its screens get their
-             * own monitor, PRISM2:. The first board is as before. */
+            /* Auto drives a second board too (multi-board.md): one the
+             * other supplied driver finds, else a second of the first one's
+             * kind (a second copy of its driver; drivers skip boards
+             * another copy has claimed). Its screens get their own monitor,
+             * PRISM2:. The first board is as before. */
             if(found && second && prefs.second) {
                 driverQuiet=TRUE;            /* no board there is the usual case */
-                if(driver_open(&board2,second,&config))
+                if(driver_open(&board2,second,&config) || driver_open(&board2,first,&config))
                     ncards=2;
                 driverQuiet=FALSE;
+                /* PRIMARY=SECOND: the second board found is the primary -
+                 * it gets the PRISM: modes and so Workbench (a bigger
+                 * monitor on it, say). The drivers keep no pointer to
+                 * these records: swapping them, and their driver slots,
+                 * swaps the boards. */
+                if(ncards==2 && prefs.swapBoards) {
+                    struct PrismBoard t=board;
+                    board=board2;
+                    board2=t;
+                    driver_swap_slots();
+                    boardsSwapped=TRUE;
+                }
             }
         }
     }
@@ -2491,6 +2506,9 @@ int main(void)
                           (board2.drawLine || BOARD_CAN(&board2, line) ? PRISM_HW_LINE : 0) |
                           (BOARD_CAN(&board2, planar) ? PRISM_HW_PLANAR : 0);
     }
+    sem.boardsSwapped = boardsSwapped;
+    sem.boardAddr[0] = board.configDev ? (ULONG)board.configDev->cd_BoardAddr : 0;
+    sem.boardAddr[1] = ncards > 1 && board2.configDev ? (ULONG)board2.configDev->cd_BoardAddr : 0;
     sem.vramKB[0] = board.vramSize >> 10;
     sem.vramKB[1] = ncards > 1 ? board2.vramSize >> 10 : 0;
     sem.testBeginOn = test_begin_on;

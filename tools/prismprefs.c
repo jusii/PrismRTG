@@ -38,10 +38,13 @@ enum { GAD_LIST = 1, GAD_ON, GAD_HZ, GAD_BOARD, GAD_BLIT, GAD_LOG,
        GAD_DRAG, GAD_SOFTPTR };
 
 static STRPTR hzLabels[] = { "Default", "60 Hz", "70 Hz", "72 Hz", "75 Hz", NULL };
-/* the Board cycle: Auto twice - every board PrismD finds, or only the
- * first (SECONDBOARD=OFF) - then the PB_* boards after Auto */
-static STRPTR boardLabels[] = { "Auto", "Auto, 1 board", "Picasso II", "ZZ9000", "P96 driver",
-                                "UAE (native)", "Other (BOARD= in the prefs file)", NULL };
+/* the Board cycle: Auto three ways - every board PrismD finds (two at
+ * most), the same with the two swapped (PRIMARY=SECOND: the second board
+ * found is the primary, with the PRISM: modes and Workbench), or only the
+ * first board (SECONDBOARD=OFF) - then the PB_* boards after Auto */
+#define BOARD_AUTOS 3
+static STRPTR boardLabels[] = { "Auto", "Auto, swapped", "Auto, 1 board", "Picasso II", "ZZ9000",
+                                "P96 driver", "UAE (native)", "Other (BOARD= in the prefs file)", NULL };
 /* LOG=OFF / ON / SYNC, in that order (prefs.log 0, 1, 2) */
 static STRPTR logLabels[] = { "Off", "On", "Sync", NULL };
 
@@ -65,19 +68,51 @@ static struct Gui g;
 
 /* ---- helpers -------------------------------------------------------- */
 
+static void set_status(struct Gui *g, const char *s);
+
+/* What a Board entry means, with the boards PrismD drives now by name and
+ * expansion address (two of one kind tell apart by it). */
+static void board_status(struct Gui *g, UWORD code)
+{
+    struct PrismSem *s;
+    char buf[80];
+    Forbid();
+    s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME);
+    if (s && s->version >= 5 && s->numBoards > 1 && code < 2) {
+        /* the primary as running now, and which one this entry makes it
+         * (from the next start): running swapped or not, "swapped" means
+         * the other one of the two */
+        BOOL nowSwapped = s->boardsSwapped;
+        BOOL other = (code == 1) != nowSwapped;
+        sprintf(buf, "Primary from the next start: %.20s @%06lx",
+                other ? (s->board2Name ? s->board2Name : "?") : (s->boardName ? s->boardName : "?"),
+                (unsigned long)(s->boardAddr[other ? 1 : 0] & 0xffffff));
+        Permit();
+        set_status(g, buf);
+        return;
+    }
+    Permit();
+    set_status(g, code == 2 ? "Auto: only the first board PrismD finds" :
+                  code == 1 ? "Auto, swapped: the second board found is the primary" :
+                              "Auto: every board PrismD finds (two at most)");
+}
+
 /* the Board cycle's entry for the prefs, and back */
 static UWORD board_entry(const struct PrismPrefs *p)
 {
-    return p->board == PB_AUTO ? (p->second ? 0 : 1) : p->board + 1;
+    if (p->board != PB_AUTO)
+        return p->board + BOARD_AUTOS - 1;
+    return !p->second ? 2 : p->swapBoards ? 1 : 0;
 }
 
 static void board_from_entry(struct PrismPrefs *p, UWORD code)
 {
-    if (code <= 1) {
+    if (code < BOARD_AUTOS) {
         p->board = PB_AUTO;
-        p->second = code == 0;
+        p->second = code != 2;
+        p->swapBoards = code == 1;
     } else {
-        p->board = code - 1 < PB_COUNT ? code - 1 : PB_AUTO;
+        p->board = code - (BOARD_AUTOS - 1) < PB_COUNT ? code - (BOARD_AUTOS - 1) : PB_AUTO;
     }
 }
 
@@ -447,9 +482,8 @@ static void event_loop(struct Gui *g)
                     break;
                 case GAD_BOARD:
                     board_from_entry(&g->prefs, code);
-                    if (code <= 1)
-                        set_status(g, code ? "Auto: only the first board PrismD finds"
-                                           : "Auto: every board PrismD finds (two at most)");
+                    if (code < BOARD_AUTOS)
+                        board_status(g, code);
                     break;
                 case GAD_BLIT:
                     g->prefs.blitter = (gad->Flags & GFLG_SELECTED) ? 1 : 0;

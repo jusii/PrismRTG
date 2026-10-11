@@ -609,12 +609,15 @@ BOOL ZZ9000_Probe(struct PrismBoard *b)
     struct ZZPriv *p = &zzpriv;
     UWORD fw, caps, vmode;
 
+    /* one no other driver process has taken (a second copy of this driver
+     * drives a second board) */
     p->z3 = TRUE;
-    if (!(cd = FindConfigDev(NULL, ZZ_MFR, ZZ_PROD_Z3))) {
+    if (!(cd = driver_find(NULL, ZZ_MFR, ZZ_PROD_Z3))) {
         p->z3 = FALSE;
-        if (!(cd = FindConfigDev(NULL, ZZ_MFR, ZZ_PROD_Z2)))
+        if (!(cd = driver_find(NULL, ZZ_MFR, ZZ_PROD_Z2)))
             return FALSE;
     }
+    driver_claim(cd);                    /* given back when this driver ends */
 
     b->name      = p->z3 ? "ZZ9000 (Zorro III)" : "ZZ9000 (Zorro II)";
     b->configDev = cd;

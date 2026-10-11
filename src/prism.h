@@ -83,6 +83,10 @@ struct PrismSem {
     ULONG vramKB[2];
     LONG  (*testBeginOn)(UBYTE board, ULONG width, ULONG height, ULONG bits, ULONG hz,
                          const char *label);
+    /* each board's expansion address (its ConfigDev's cd_BoardAddr): tells
+     * two boards of one kind apart */
+    ULONG boardAddr[2];
+    UBYTE boardsSwapped;         /* PRIMARY=SECOND took effect at start */
 };
 #define PRISM_HW_FILL     (1UL << 0)
 #define PRISM_HW_COPY     (1UL << 1)    /* within one bitmap            */

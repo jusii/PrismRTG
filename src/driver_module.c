@@ -10,7 +10,9 @@
  *   void driver_retain(void)
  * and is built with tools/mkdriver.sh NAME, which defines DRIVER_NAME. */
 #include <exec/memory.h>
+#include <libraries/configvars.h>
 #include <proto/exec.h>
+#include <proto/expansion.h>
 #include <proto/dos.h>
 #include <proto/graphics.h>
 #include <stdio.h>
@@ -30,6 +32,46 @@ unsigned long *__BUFSIZE = &stdioBufSize;
 #error Build a driver with tools/mkdriver.sh NAME (it defines DRIVER_NAME)
 #endif
 static const char version[] __attribute__((used)) = "$VER: " DRIVER_NAME ".driver 1.1b5 (10.10.26)";
+
+/* the boards this driver process has claimed (driver_claim) */
+static struct ConfigDev *claimed[4];
+
+struct ConfigDev *driver_find(struct ConfigDev *after, ULONG mfr, ULONG prod)
+{
+    struct ConfigDev *cd = after;
+    while ((cd = FindConfigDev(cd, mfr, prod)))
+        if (!cd->cd_Driver)
+            return cd;
+    return NULL;
+}
+
+void driver_claim(struct ConfigDev *cd)
+{
+    int i;
+    if (!cd)
+        return;
+    Forbid();
+    if (!cd->cd_Driver)
+        cd->cd_Driver = FindTask(NULL);
+    Permit();
+    for (i = 0; i < 4; i++)
+        if (!claimed[i] || claimed[i] == cd) {
+            claimed[i] = cd;
+            return;
+        }
+}
+
+/* give back what this process claimed: it no longer drives those boards */
+static void unclaim(void)
+{
+    APTR me = FindTask(NULL);
+    int i;
+    Forbid();
+    for (i = 0; i < 4; i++)
+        if (claimed[i] && claimed[i]->cd_Driver == me)
+            claimed[i]->cd_Driver = NULL;
+    Permit();
+}
 
 void driver_module_done(void)
 {
@@ -88,6 +130,7 @@ done:
      * Native drivers return at once; nothing runs shutdown on a mode that
      * was never set, including early no-modes failures. */
     driver_retain();
+    if(ExpansionBase) unclaim();
     if(ExpansionBase)CloseLibrary((struct Library *)ExpansionBase);
     if(GfxBase)CloseLibrary((struct Library *)GfxBase);
     driver_module_done();
