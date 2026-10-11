@@ -1021,71 +1021,6 @@ static void p2_CalibrateExpand(struct PrismBoard *b)
     }
 }
 
-/* PrismTest XTEST: JAM1 text on the real chip, read back, at this mode's
- * pixel size: the chip's own transparency (key = NOT fg), and the two-pass
- * way (clear the set bits, then OR the colour in) built from two opaque
- * expansions. Prints what fails. */
-static ULONG xt_get(const UBYTE *q, UBYTE bpp)
-{
-    return bpp == 1 ? q[0] : bpp == 2 ? *(const UWORD *)q : *(const ULONG *)q;
-}
-
-void Picasso2_TranspTest(struct PrismBoard *b, UBYTE bpp)
-{
-    static const UBYTE t[4][3] = {
-        { 0xa5, 0x3c, 0xff }, { 0x01, 0x80, 0x5a }, { 0xff, 0x00, 0x81 }, { 0x6d, 0xb6, 0xdb },
-    };
-    static const ULONG fgs[] = { 0x08f808f8, 0xffffffff, 0xe847e847, 0x08280828, 0x1f641f64,
-                                 0x00000000, 0x80008000, 0x00800080, 0x7f7f7f7f, 0x80808080,
-                                 0x12345678, 0x9abcdef0, 0x55aa55aa };
-    struct P2Priv *p = b->priv;
-    ULONG d = p->scratch + 0x1000, pitch = 128, mask, under, ones;
-    UWORD i, k;
-    WORD x, y;
-
-    if (bpp == 3)
-        return;
-    mask = bpp == 1 ? 0xff : bpp == 2 ? 0xffff : 0xffffffffUL;
-    under = 0x18181818UL & mask;
-    ones = mask;
-    for (k = 0; k < 2; k++) {
-        printf("%u-bit %s:", bpp * 8, k ? "two-pass" : "chip key");
-        for (i = 0; i < sizeof(fgs) / sizeof(fgs[0]); i++) {
-            ULONG fg = fgs[i] & mask, got = 0, want = 0;
-            UWORD bad = 0;
-            WORD fx = -1, fy = -1;
-            BOOL ok;
-            memset(b->vram + d, 0x18, pitch * 4);
-            if (k == 0) {
-                ok = expand(b, p->xpad, d, pitch, bpp, 21, 4, &t[0][0], 3, fg, 0, TRUE, 20000);
-            } else {
-                xrop = ROP_CLEAR_SRC;
-                ok = expand(b, p->xpad, d, pitch, bpp, 21, 4, &t[0][0], 3, ones, 0, FALSE, 20000);
-                xrop = ROP_OR;
-                ok = ok && expand(b, p->xpad, d, pitch, bpp, 21, 4, &t[0][0], 3, fg, 0, FALSE, 20000);
-                xrop = ROP_SRC;
-            }
-            if (!ok) {
-                printf(" %08lx:STUCK", (unsigned long)fg);
-                continue;
-            }
-            for (y = 0; y < 4; y++)
-                for (x = 0; x < 21; x++) {
-                    BOOL bit = (t[y][x >> 3] >> (7 - (x & 7))) & 1;
-                    ULONG v = xt_get(b->vram + d + y * pitch + x * bpp, bpp);
-                    ULONG w = bit ? fg : under;
-                    if (v != w && !bad++) { fx = x; fy = y; got = v; want = w; }
-                }
-            if (bad)
-                printf(" %lx:%u(@%d,%d %lx/%lx)", (unsigned long)fg, bad, fx, fy,
-                       (unsigned long)got, (unsigned long)want);
-            else
-                printf(" %lx:ok", (unsigned long)fg);
-        }
-        printf("\n");
-    }
-}
-
 UBYTE Picasso2_TextExpand(struct PrismBoard *b, BOOL *transparent)
 {
     struct P2Priv *p = b->priv;
@@ -1283,11 +1218,6 @@ static void p2_CursorMove(struct PrismBoard *b, WORD x, WORD y)
 static void p2_Shutdown(struct PrismBoard *b)
 {
     p2_SetSwitch(b, FALSE);
-}
-
-UBYTE Picasso2_ChipID(struct PrismBoard *b)
-{
-    return ((struct P2Priv *)b->priv)->chip;
 }
 
 /* A cold chip is in mono I/O mode (Misc bit 0 = 0) and its CRTC is not
@@ -1547,44 +1477,6 @@ BOOL Picasso2_Probe(struct PrismBoard *b)
     b->cursorMove      = p2_CursorMove;
     return TRUE;
 }
-
-#ifdef PRISM_DEBUG
-#include <stdio.h>
-/* Print the live register state, for comparing against what SetMode wrote. */
-void Picasso2_Dump(struct PrismBoard *b)
-{
-    struct P2Priv *p = b->priv;
-    UWORD i;
-
-    printf("text expansion: rows padded to %u byte(s)%s\n", p->xpad,
-           p->xpad == 0xff ? " - OFF (failed its self-test)" :
-           p->xtransp ? ", transparent too" : ", opaque only");
-    printf("32-bit blitter (fill + text): %s%s\n", p->x32 ? "yes" : "no",
-           p->x32 ? (p->x32t ? ", transparent too" : ", opaque only") : "");
-    printf("  register word writes: %s; colours may stay set: %s; fills need source pitch: %s\n",
-           p->wordio ? "yes" : "no", p->srOff ? "yes" : "no", p->fillPitch ? "yes" : "no");
-    if (!p->xtransp && p->xdiag)
-        printf("  transparency test: %lu-byte pixels, x=%lu y=%lu read %04lx%s\n",
-               (unsigned long)((p->xdiag >> 28) & 0xf), (unsigned long)((p->xdiag >> 20) & 0xff),
-               (unsigned long)((p->xdiag >> 16) & 0xf),
-               (unsigned long)(p->xdiag & 0xffff), (p->xdiag >> 24) == 0xff ? " (blit stuck)" : "");
-    printf("chip=%02x aperture=%02x MISC=%02x HDR=%02x ST1=%02x\nSR:", p->chip, p->aperture,
-           inb(b, MISC_R), rhdr(b), inb(b, STATUS1));
-    for (i = 0; i < 0x20; i++) printf(" %02x", rseq(b, i));
-    printf("\nCR:");
-    for (i = 0; i < 0x20; i++) printf(" %02x", rcrt(b, i));
-    printf("\nGR:");
-    for (i = 0; i < 0x10; i++) printf(" %02x", rgrc(b, i));
-    printf("\nAR:");
-    for (i = 0; i < 0x15; i++) printf(" %02x", rattr(b, i));
-    attr_on(b);
-    printf("\nDAC 0-3:");
-    outb(b, DAC_RI, 0);
-    for (i = 0; i < 12; i++) printf(" %02x", inb(b, DAC_D));
-    printf("\n");
-    fflush(stdout);
-}
-#endif
 
 /* ---- as a loadable module (driver_module.c) --------------------------- */
 #ifdef PRISM_DRIVER_MODULE

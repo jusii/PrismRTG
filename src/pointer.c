@@ -98,7 +98,7 @@ static void load_colours(struct ViewPort *vp)
         colours[i] = t[i] >> 24;
 }
 
-BOOL pointer_software(void)
+static BOOL pointer_software(void)
 {
     struct PBitMap *front,*back; WORD top,backTop; UWORD w,h;
     if (!on) return FALSE;

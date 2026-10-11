@@ -325,7 +325,6 @@ extern volatile UBYTE pointerPending;        /* a move waits for the lock  */
 void pointer_catchup(void);                  /* lock NOT held: apply it    */
 void pointer_off(void);                      /* lock held                 */
 void pointer_colours(struct ViewPort *vp);   /* lock held                 */
-BOOL pointer_software(void);
 void pointer_compose(struct PBitMap *, WORD);
 void present_tick(void);
 BOOL present_ready(struct PrismCard *c);

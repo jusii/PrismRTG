@@ -25,7 +25,6 @@
  * 0x7A01xxxx for a second; low bits = depth slot << 8 | size slot
  * (prefs.h), so an ID never changes when other modes are off. */
 #define PRISM_MONITOR_ID  0x7A000000UL
-#define PRISM_ID_MASK     0xFFFF0000UL
 #define PRISM_CARD_ID(n)  (PRISM_MONITOR_ID | ((ULONG)(n) << 16))
 #define PRISM_ID_CARD(id) (((ULONG)(id) >> 16) & 1)
 #define IS_PRISM_ID(id)   (((id) & 0xFFFE0000UL) == PRISM_MONITOR_ID)

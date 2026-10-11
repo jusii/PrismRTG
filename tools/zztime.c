@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Laine Jones */
 /*
- * iotime - what do single bus accesses and OS calls cost on this machine?
+ * zztime - iotime for the ZZ9000: what do single accesses to the card and OS
+ * calls cost on this machine?
  *
  * Run with PrismD started and idle (the Cirrus chip awake, no Prism screen
  * being drawn into). Touches only the BLT background-colour register (GR0),

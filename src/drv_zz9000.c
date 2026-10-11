@@ -598,11 +598,6 @@ static void zz_Shutdown(struct PrismBoard *b)
     zz_SetSwitch(b, FALSE);
 }
 
-UWORD ZZ9000_FirmwareVersion(struct PrismBoard *b)
-{
-    return R16(b, REG_FW_VERSION);
-}
-
 BOOL ZZ9000_Probe(struct PrismBoard *b)
 {
     struct ConfigDev *cd;

@@ -86,7 +86,7 @@ Linux (GPL-2.0-only) sources are not to be pasted into this tree.
   `ModeNotAvailable`, `OpenMonitor`, `CloseMonitor`. Prism ModeIDs are `0x7A00xxxx` (one "monitor",
   low 12 bits = mode index). A `DisplayInfoHandle` for a Prism mode points at Prism's own mode record.
   graphics.library's private `AddDisplayInfoData()` cannot create records for new IDs
-  (`tools/dbtest.c`), so patching is the route.
+  (tried in an experiment, since removed), so patching is the route.
 * **Screens:** patches `OpenScreenTagList`, `OpenScreen`, `CloseScreen`. A screen on a Prism mode gets a
   VRAM framebuffer (first-fit allocator), and Intuition gets `SA_BitMap` = a bitmap whose planes all
   alias **one** chip-RAM plane, so Intuition's planar drawing can't land anywhere harmful. Intuition
