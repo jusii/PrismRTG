@@ -484,6 +484,10 @@ static enum PrismResult pbm_result(struct PBitMap *p,enum PrismResult result,
 void pbm_flush_shown(void)
 {
     UWORD i;
+    /* nothing to upload without a shadow board (Picasso II, ZZ9000): no
+     * lock, no walk of the table, fifty times a second */
+    if (!prism_any_shadow())
+        return;
     ObtainSemaphore(&lock);
     for (i=0;i<PBM_MAX;i++) {
         struct PBitMap *q = table[i];

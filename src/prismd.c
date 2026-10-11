@@ -82,6 +82,15 @@ unsigned long *__BUFSIZE = &stdioBufSize;
 static struct PrismPrefs prefs;
 
 BOOL prism_dragging(void) { return prefs.dragging; }
+/* does any board go through a shadow copy (PBF_SHADOW)? */
+BOOL prism_any_shadow(void)
+{
+    ULONG i;
+    for (i = 0; i < ncards; i++)
+        if (cards[i].b && (cards[i].b->flags & PBF_SHADOW))
+            return TRUE;
+    return FALSE;
+}
 BOOL prism_software_pointer(void) { return prefs.softwarePointer; }
 #define DBG_RING 8192
 static char *dbgRing;                   /* allocated when LOG is on */
@@ -1528,6 +1537,10 @@ static struct ModeRec *promote_mode(struct NewScreen *ns, struct TagItem *tags,
     if ((ns && (ns->Type & CUSTOMBITMAP)) || tag_data(tags, ext, SA_BitMap, 0) ||
         tag_data(tags, ext, SA_LikeWorkbench, FALSE))
         return NULL;
+    /* not Workbench itself: its mode is the ScreenMode preferences' choice,
+     * and the name promotion would match is whichever task opened it */
+    if (tag_data(tags, ext, SA_Type, ns ? (ULONG)(ns->Type & SCREENTYPE) : CUSTOMSCREEN) == WBENCHSCREEN)
+        return NULL;
     prog = program_name(buf, sizeof(buf));
     k = prefs_prog_find(&prefs, prog);
     if (k >= 0 ? prefs.prog[k].keep : !prefs.promote)
@@ -1537,8 +1550,19 @@ static struct ModeRec *promote_mode(struct NewScreen *ns, struct TagItem *tags,
         return NULL;
     w = tag_data(tags, ext, SA_Width, ns ? (ULONG)(WORD)ns->Width : (ULONG)STDSCREENWIDTH);
     h = tag_data(tags, ext, SA_Height, ns ? (ULONG)(WORD)ns->Height : (ULONG)STDSCREENHEIGHT);
-    if ((LONG)w <= 0 || w > 4096) w = 640;       /* STDSCREENWIDTH: the mode's */
-    if ((LONG)h <= 0 || h > 4096) h = 256;
+    if ((LONG)w <= 0 || w > 4096 || (LONG)h <= 0 || h > 4096) {
+        /* STDSCREENWIDTH/HEIGHT: the chipset mode's nominal size (a lores
+         * game is 320 wide, a laced PAL screen 512 high); with no mode at
+         * all, the NewScreen's ViewModes bits are a default-monitor ID */
+        struct DimensionInfo di;
+        ULONG mid = id != INVALID_ID ? id : ns ? (ULONG)(ns->ViewModes & (HIRES | LACE | SUPERHIRES)) : HIRES_KEY;
+        if (GetDisplayInfoData(NULL, (UBYTE *)&di, sizeof(di), DTAG_DIMS, mid) > 0) {
+            if ((LONG)w <= 0 || w > 4096) w = di.Nominal.MaxX - di.Nominal.MinX + 1;
+            if ((LONG)h <= 0 || h > 4096) h = di.Nominal.MaxY - di.Nominal.MinY + 1;
+        }
+        if ((LONG)w <= 0 || w > 4096) w = 640;
+        if ((LONG)h <= 0 || h > 4096) h = 256;
+    }
     cs = &cst[0];
     for (i = 0; i < cs->nmodes; i++) {
         struct ModeRec *mr = &cs->modes[i];

@@ -71,17 +71,22 @@ int prefs_prog_find(const struct PrismPrefs *p, const char *name)
 
 BOOL prefs_prog_set(struct PrismPrefs *p, const char *name, BOOL keep)
 {
-    int i, n = strlen(name);
+    char t[PREFS_PROGNAME + 1];
+    int i, n;
+    while (*name == ' ')
+        name++;
+    n = strlen(name);
     while (n && name[n - 1] == ' ')
         n--;
     if (!n || n > PREFS_PROGNAME)
         return FALSE;
-    if ((i = prefs_prog_find(p, name)) < 0) {
+    memcpy(t, name, n);                  /* trimmed: "Doom " is Doom's entry */
+    t[n] = 0;
+    if ((i = prefs_prog_find(p, t)) < 0) {
         if (p->nprog >= PREFS_NPROGS)
             return FALSE;
         i = p->nprog++;
-        memcpy(p->prog[i].name, name, n);
-        p->prog[i].name[n] = 0;
+        strcpy(p->prog[i].name, t);
     }
     p->prog[i].keep = keep ? 1 : 0;
     return TRUE;

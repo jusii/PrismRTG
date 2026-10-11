@@ -165,6 +165,13 @@ struct Fetch {
 };
 
 static SSL_CTX *ctx;
+static BOOL verify;                      /* the peer's certificate is checked */
+
+/* Ctrl-C in a Shell, or PrismPrefs' window closing: stop waiting */
+static BOOL broken(void)
+{
+    return (SetSignal(0, 0) & SIGBREAKF_CTRL_C) != 0;
+}
 
 static LONG tcp_connect(const char *host, int port)
 {
@@ -194,7 +201,7 @@ static BOOL ssl_write_all(SSL *ssl, const char *p, int n)
 {
     while (n > 0) {
         int r = SSL_write(ssl, p, n);
-        if (r <= 0)
+        if (r <= 0 || broken())
             return FALSE;
         p += r;
         n -= r;
@@ -208,7 +215,7 @@ static BOOL ssl_line(SSL *ssl, char *buf, int n)
     int i = 0;
     for (;;) {
         char c;
-        if (SSL_read(ssl, &c, 1) != 1)
+        if (SSL_read(ssl, &c, 1) != 1 || broken())
             return FALSE;
         if (c == '\n')
             break;
@@ -253,13 +260,26 @@ static BOOL fetch_once(const struct Url *u, struct Fetch *f)
     }
     SSL_set_tlsext_host_name(ssl, u->host);
     SSL_set_fd(ssl, s);
-    if (SSL_connect(ssl) != 1)
+    if (SSL_connect(ssl) != 1) {
+        if (verify) {
+            /* the handshake with the certificate check on failed: most
+             * likely no certificates to check against (AmiSSL:Certs is
+             * not there). Once more without, and the report says so. */
+            say("PrismUpdate: note: the certificate of %s could not be checked "
+                "(no AmiSSL:Certs?); the connection is not verified\n", u->host);
+            verify = FALSE;
+            SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);
+            SSL_free(ssl);
+            CloseSocket(s);
+            return fetch_once(u, f);
+        }
         goto out;
+    }
     sprintf(req, "GET %s HTTP/1.1\r\nHost: %s\r\nUser-Agent: " AGENT "\r\n"
                  "Accept: */*\r\nConnection: close\r\n\r\n", u->path, u->host);
     if (!ssl_write_all(ssl, req, strlen(req)))
         goto out;
-    if (!ssl_line(ssl, line, sizeof(line)) || strncmp(line, "HTTP/", 5))
+    if (!ssl_line(ssl, line, sizeof(line)) || strncmp(line, "HTTP/", 5) || strlen(line) < 12)
         goto out;
     f->status = atoi(line + 9);
     while (ssl_line(ssl, line, sizeof(line)) && line[0]) {
@@ -291,7 +311,7 @@ static BOOL fetch_once(const struct Url *u, struct Fetch *f)
             while (n > 0) {
                 UBYTE buf[2048];
                 int r = SSL_read(ssl, buf, n < (LONG)sizeof(buf) ? n : (LONG)sizeof(buf));
-                if (r <= 0 || !fetch_put(f, buf, r))
+                if (r <= 0 || broken() || !fetch_put(f, buf, r))
                     goto out;
                 n -= r;
             }
@@ -304,7 +324,7 @@ static BOOL fetch_once(const struct Url *u, struct Fetch *f)
             int r = SSL_read(ssl, buf, sizeof(buf));
             if (r <= 0)
                 break;
-            if (!fetch_put(f, buf, r))
+            if (broken() || !fetch_put(f, buf, r))
                 goto out;
             if (clen >= 0 && (LONG)f->len >= clen)
                 break;
@@ -422,11 +442,17 @@ static BOOL from_mirror(const char *mirror, struct Latest *l)
         say("PrismUpdate: no mirror is set (MIRROR= in the prefs)\n");
         return FALSE;
     }
+    if (strlen(mirror) > URL_MAX - 64) {
+        say("PrismUpdate: the mirror address is too long\n");
+        return FALSE;
+    }
     memset(&f, 0, sizeof(f));
     f.limit = 4096;
     sprintf(url, "%s%slatest.txt", mirror, mirror[strlen(mirror) - 1] == '/' ? "" : "/");
     if (!fetch(url, &f))
         goto out;
+    /* "<version> <archive>", the archive a name in the mirror's directory
+     * or a full https URL; a newline is not required after it */
     p = (char *)f.body;
     while (*p == ' ' || *p == '\n' || *p == '\r') p++;
     if (!(e = strpbrk(p, " \r\n")))
@@ -439,8 +465,12 @@ static BOOL from_mirror(const char *mirror, struct Latest *l)
     p = e;
     if ((e = strpbrk(p, " \r\n")))
         *e = 0;
+    if (!*p || strlen(p) + strlen(mirror) + 2 > sizeof(l->url)) {
+        say("PrismUpdate: the mirror's latest.txt names no archive, or too long a one\n");
+        goto out;
+    }
     if (!strncmp(p, "https://", 8))
-        strncpy(l->url, p, sizeof(l->url) - 1);
+        strcpy(l->url, p);
     else
         sprintf(l->url, "%s%s%s", mirror, mirror[strlen(mirror) - 1] == '/' ? "" : "/", p);
     l->from = "the mirror";
@@ -635,6 +665,13 @@ int main(void)
     if (!(ctx = SSL_CTX_new(TLS_client_method()))) {
         say("PrismUpdate: no SSL context\n");
         goto done;
+    }
+    /* the server's certificate against the ones AmiSSL ships (AmiSSL:Certs);
+     * an offload checks on its own side. The host name is not matched
+     * against the certificate (an offload has no call for it). */
+    if (SSL_CTX_set_default_verify_paths(ctx) == 1) {
+        SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, NULL);
+        verify = TRUE;
     }
 
     memset(&l, 0, sizeof(l));

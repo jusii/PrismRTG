@@ -54,6 +54,7 @@
 
 ; ---- install, update or remove -------------------------------------------
 (set mode 0)
+(set wipe 0)
 (set fresh (not (exists (tackon mon "Prism"))))   ; a first install, not an update
 (if (not fresh)
     (set mode
@@ -74,8 +75,8 @@
 ; afresh: the settings go, and the rest of the install runs as a first one
 (if (= mode 1)
     (
-        (run "Delete >NIL: ENVARC:Prism.prefs ENV:Prism.prefs QUIET")
-        (set fresh 1)
+        (set wipe 1)              ; the settings go when the programs are copied,
+        (set fresh 1)             ; not before a question the user may still abort
     ))
 
 (if (= mode 2)
@@ -228,6 +229,8 @@
 (run "Protect >NIL: C:PrismUpdate +e")
 (run (cat "Protect >NIL: \"" (tackon mon "Prism") "\" +e"))
 (run "Protect >NIL: SYS:Prefs/PrismPrefs +e")
+(if (= wipe 1)
+    (run "Delete >NIL: ENVARC:Prism.prefs ENV:Prism.prefs QUIET"))
 (if (not (exists "ENVARC:Prism.prefs"))
     (run "SYS:Prefs/PrismPrefs >NIL: SAVE"))
 

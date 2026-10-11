@@ -349,7 +349,8 @@ blitter off.
   off (`KEEPPROG=` / `PROMOTEPROG=`, by command name or task name). The
   screen is the mode's size, so a program that draws a 640x256 screen
   edge to edge has a band left over; programs that bring their own bitmap
-  (`CUSTOMBITMAP`) or ask for more than 8 planes are left alone.
+  (`CUSTOMBITMAP`) or ask for more than 8 planes are left alone, and so
+  is Workbench itself (Prefs/ScreenMode puts it on the board).
 * **Update check** ("Updates" in PrismPrefs, `UPDATES=GITHUB|MIRROR|BOTH`,
   then "Check now"): `C:PrismUpdate` asks GitHub's release API, or a mirror
   (`MIRROR=https://host/dir/`, a directory with `latest.txt` holding
@@ -357,7 +358,9 @@ blitter off.
   download it to T: and run its installer, which ends with the usual
   reboot. Everything goes over HTTPS, so it needs a running TCP/IP stack
   and AmiSSL 5 (or an SSL offload that answers to the AmiSSL API: the
-  tool keeps to the basic calls). A beta sees pre-releases, a final
+  tool keeps to the basic calls). The server's certificate is checked
+  against AmiSSL's (`AmiSSL:Certs`); without them the connection is made
+  unverified and the report says so. A beta sees pre-releases, a final
   release only final ones. From a Shell: `PrismUpdate`, `PrismUpdate GET`.
 * **Off unless switched on:** screen dragging (`DRAGGING=ON`) and
   Picasso96 PIP windows go through a compositor that redoes only what

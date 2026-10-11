@@ -329,6 +329,7 @@ void pointer_compose(struct PBitMap *, WORD);
 void present_tick(void);
 BOOL present_ready(struct PrismCard *c);
 BOOL prism_dragging(void);
+BOOL prism_any_shadow(void);           /* a board with PBF_SHADOW is driven */
 BOOL prism_software_pointer(void);
 void present_stop(struct PrismCard *c);
 void present_invalidate(struct PrismCard *c);   /* compose card c's frame afresh */
