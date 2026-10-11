@@ -27,6 +27,7 @@ extern struct PrismBoard board;
 struct PrismCard {
     struct PrismBoard *b;               /* the driver's hooks, VRAM, limits  */
     UBYTE textBad;                      /* bit n: blitter text wrong at n bytes/pixel */
+    UBYTE index;                        /* 0 or 1: its place in cards[]      */
 };
 extern struct PrismCard cards[MAX_CARDS];
 
@@ -61,8 +62,7 @@ void render_quit(void);
 void gels_init(void);
 void gels_quit(void);
 /* selftest.c: the board's text blit against a known answer (first mode set) */
-#define textBad (cards[0].textBad)
-void selftest_text(void);
+void selftest_text(struct PrismCard *c);
 /* is p one of the live Prism bitmaps? (a handle from a program; the
  * pointer is compared, never read) */
 BOOL pbm_live(const struct PBitMap *p);
@@ -90,11 +90,13 @@ void memchk(const char *where);
 #define TRACE(n)
 #endif
 
-LONG vram_alloc(ULONG size, UBYTE format, ULONG pitch, UWORD width, UWORD height);
+/* VRAM of one card (prismd.c, bitmap.c; caller holds lock) */
+LONG vram_alloc(struct PrismCard *c, ULONG size, UBYTE format, ULONG pitch, UWORD width, UWORD height);
 struct PBitMap;
-LONG vram_get_size(ULONG size, UBYTE format, ULONG pitch, UWORD width, UWORD height,
-                   struct PBitMap *keep);   /* evicts hidden bitmaps to fast RAM */
-void vram_free(ULONG off);
+LONG vram_get_size(struct PrismCard *c, ULONG size, UBYTE format, ULONG pitch, UWORD width,
+                   UWORD height, struct PBitMap *keep);   /* evicts its hidden bitmaps to fast RAM */
+void vram_free(struct PrismCard *c, ULONG off);
+ULONG vram_free_bytes(struct PrismCard *c, ULONG *largest);
 
 /* ---- chunky bitmaps -------------------------------------------------
  *
@@ -138,6 +140,9 @@ struct PBitMap {
     UBYTE          blitFits;    /* the whole bitmap is within the board's
                                    direct blit limits (pbm_fits), so any
                                    rectangle in it is too               */
+    struct PrismCard  *card;    /* the board it belongs to: its VRAM, the
+                                   display it is shown on               */
+    struct PrismBoard *bd;      /* card->b, kept here for the fast paths */
 };
 
 /* The Prism bitmap behind a BitMap, or NULL (bitmap.c keeps the table).
@@ -163,8 +168,8 @@ static inline struct PBitMap *pbm_get(const struct BitMap *bm)
 /* prismd.c: the displayable bitmap of a screen Intuition is opening on a
  * Prism mode, or NULL */
 struct PBitMap *screen_bitmap_hook(ULONG w, ULONG h, ULONG depth, ULONG flags);
-struct PBitMap *pbm_new(UWORD w, UWORD h, UBYTE depth, UBYTE format, UWORD *penTab,
-                        BOOL vram, BOOL clear);
+struct PBitMap *pbm_new(struct PrismCard *c, UWORD w, UWORD h, UBYTE depth, UBYTE format,
+                        UWORD *penTab, BOOL vram, BOOL clear);
 void            pbm_free(struct PBitMap *p);
 ULONG           pbm_count(void);
 /* VRAM paging (bitmap.c, caller holds lock): move pixels in or out of
@@ -174,7 +179,7 @@ BOOL            pbm_to_vram(struct PBitMap *p);
 BOOL            pbm_to_fast(struct PBitMap *p);
 void pbm_surface(const struct PBitMap *, struct PrismSurface *);
 BOOL pbm_upload(struct PBitMap *);
-BOOL pbm_prepare_mode(void);
+BOOL pbm_prepare_mode(struct PrismCard *c);
 void pbm_flush_shown(void);
 enum PrismResult pbm_hw_fill(struct PBitMap *, UBYTE, UWORD, UWORD, UWORD, UWORD, ULONG);
 enum PrismResult pbm_hw_copy(struct PBitMap *, struct PBitMap *, UWORD, UWORD, UWORD, UWORD, UWORD, UWORD);
@@ -191,17 +196,18 @@ enum PrismResult pbm_hw_planar(const struct PrismPlanar *, struct PBitMap *, UWO
  * finds its blitter wedged sets PBF_ACCEL_BROKEN, which comes back as
  * PR_FAILED so the caller redraws on the CPU. Anything else goes through
  * pbm_hw_fill / pbm_hw_copy and the surface operations. */
-/* Can the board do this operation at all (render.c's first choice)? */
-#define BOARD_CAN(op) (board.ops && board.ops->op)
+/* Can a board do this operation at all (render.c's first choice)? The
+ * board of a bitmap p: BOARD_CAN(p->bd, fill). */
+#define BOARD_CAN(b, op) ((b)->ops && (b)->ops->op)
 
 #define HW_OK(p) ((p)->inVram && \
-    !(board.flags & (PBF_SHADOW | PBF_ACCEL_BROKEN | PBF_SOFTWARE | PBF_PRESENT)))
+    !((p)->bd->flags & (PBF_SHADOW | PBF_ACCEL_BROKEN | PBF_SOFTWARE | PBF_PRESENT)))
 
-static inline BOOL hw_fits(ULONG bytes, UWORD h, ULONG pitch)
+static inline BOOL hw_fits(const struct PrismBoard *b, ULONG bytes, UWORD h, ULONG pitch)
 {
-    return (!board.blitMaxBytes || bytes <= board.blitMaxBytes) &&
-        (!board.blitMaxRows || h <= board.blitMaxRows) &&
-        (!board.blitMaxPitch || pitch <= board.blitMaxPitch);
+    return (!b->blitMaxBytes || bytes <= b->blitMaxBytes) &&
+        (!b->blitMaxRows || h <= b->blitMaxRows) &&
+        (!b->blitMaxPitch || pitch <= b->blitMaxPitch);
 }
 
 /* Checking the limits for every blit cost 1.5-2.5% of a small fill or copy
@@ -209,13 +215,13 @@ static inline BOOL hw_fits(ULONG bytes, UWORD h, ULONG pitch)
  * made (the board's limits are set before the first bitmap). */
 static inline void pbm_fits(struct PBitMap *p)
 {
-    p->blitFits = hw_fits((ULONG)p->w * p->bpp, p->h, p->bpr);
+    p->blitFits = hw_fits(p->bd, (ULONG)p->w * p->bpp, p->h, p->bpr);
 }
-#define FITS(p, bytes, h) ((p)->blitFits || hw_fits(bytes, h, (p)->bpr))
+#define FITS(p, bytes, h) ((p)->blitFits || hw_fits((p)->bd, bytes, h, (p)->bpr))
 
-static inline enum PrismResult hw_direct(void)
+static inline enum PrismResult hw_direct(const struct PrismBoard *b)
 {
-    if (!(board.flags & PBF_ACCEL_BROKEN))
+    if (!(b->flags & PBF_ACCEL_BROKEN))
         return PR_DONE;
     dbg("driver: operation failed; acceleration disabled\n");
     return PR_FAILED;
@@ -227,10 +233,11 @@ static inline enum PrismResult hw_direct(void)
 static inline enum PrismResult pbm_fill(struct PBitMap *p, UBYTE bpp, UWORD x, UWORD y,
                                         UWORD w, UWORD h, ULONG c)
 {
-    if (HW_OK(p) && board.fillRect && (bpp == p->bpp || bpp == 1) &&
+    struct PrismBoard *b = p->bd;
+    if (HW_OK(p) && b->fillRect && (bpp == p->bpp || bpp == 1) &&
         FITS(p, (UWORD)w * (UWORD)bpp, h)) {
-        board.fillRect(&board, p->vramOff, p->bpr, bpp, x, y, w, h, c);
-        return hw_direct();
+        b->fillRect(b, p->vramOff, p->bpr, bpp, x, y, w, h, c);
+        return hw_direct(b);
     }
     return pbm_hw_fill(p, bpp, x, y, w, h, c);
 }
@@ -238,20 +245,22 @@ static inline enum PrismResult pbm_fill(struct PBitMap *p, UBYTE bpp, UWORD x, U
 static inline enum PrismResult pbm_copy(struct PBitMap *s, struct PBitMap *d, UWORD sx, UWORD sy,
                                         UWORD dx, UWORD dy, UWORD w, UWORD h)
 {
-    if (HW_OK(s) && d->inVram &&
+    struct PrismBoard *b = s->bd;
+    /* bitmaps on two boards: the general path (the CPU) */
+    if (HW_OK(s) && d->inVram && d->bd == b &&
         ((s->blitFits && d->blitFits) ||
-         (hw_fits((UWORD)w * (UWORD)s->bpp, h, s->bpr) &&
-          (!board.blitMaxPitch || d->bpr <= board.blitMaxPitch)))) {
-        if (s == d && board.copyRect) {
-            board.copyRect(&board, s->vramOff, s->bpr, s->bpp, sx, sy, dx, dy, w, h);
-            return hw_direct();
+         (hw_fits(b, (UWORD)w * (UWORD)s->bpp, h, s->bpr) &&
+          (!b->blitMaxPitch || d->bpr <= b->blitMaxPitch)))) {
+        if (s == d && b->copyRect) {
+            b->copyRect(b, s->vramOff, s->bpr, s->bpp, sx, sy, dx, dy, w, h);
+            return hw_direct(b);
         }
         /* two of our bitmaps never share VRAM */
-        if (s != d && board.copyBetween) {
-            board.copyBetween(&board, s->vramOff + (ULONG)sy * s->bpr + (ULONG)sx * s->bpp, s->bpr,
-                              d->vramOff + (ULONG)dy * d->bpr + (ULONG)dx * d->bpp, d->bpr,
-                              (UWORD)(w * d->bpp), h);
-            return hw_direct();
+        if (s != d && b->copyBetween) {
+            b->copyBetween(b, s->vramOff + (ULONG)sy * s->bpr + (ULONG)sx * s->bpp, s->bpr,
+                           d->vramOff + (ULONG)dy * d->bpr + (ULONG)dx * d->bpp, d->bpr,
+                           (UWORD)(w * d->bpp), h);
+            return hw_direct(b);
         }
     }
     return pbm_hw_copy(s, d, sx, sy, dx, dy, w, h);
@@ -262,9 +271,10 @@ static inline enum PrismResult pbm_copy(struct PBitMap *s, struct PBitMap *d, UW
  * the A4000. Everything else goes through the operation table. */
 static inline enum PrismResult pbm_line(struct PBitMap *p, WORD x, WORD y, WORD dx, WORD dy, ULONG c)
 {
-    if (HW_OK(p) && board.drawLine && (p->blitFits || !board.blitMaxPitch || p->bpr <= board.blitMaxPitch)) {
-        board.drawLine(&board, p->vramOff, p->bpr, p->bpp, x, y, dx, dy, c);
-        return hw_direct();
+    struct PrismBoard *b = p->bd;
+    if (HW_OK(p) && b->drawLine && (p->blitFits || !b->blitMaxPitch || p->bpr <= b->blitMaxPitch)) {
+        b->drawLine(b, p->vramOff, p->bpr, p->bpp, x, y, dx, dy, c);
+        return hw_direct(b);
     }
     return pbm_hw_line(p, x, y, dx, dy, c);
 }
@@ -275,13 +285,14 @@ static inline enum PrismResult pbm_line(struct PBitMap *p, WORD x, WORD y, WORD 
 static inline enum PrismResult pbm_expand(struct PBitMap *p, UWORD x, UWORD y, UWORD w, UWORD h,
                                           const UBYTE *src, ULONG mod, ULONG fg, ULONG bg, BOOL tr)
 {
-    if (textBad & (1 << p->bpp))
+    struct PrismBoard *b = p->bd;
+    if (p->card->textBad & (1 << p->bpp))
         return PR_DECLINED;                  /* failed its self-test: CPU text */
-    if (HW_OK(p) && board.expandRect && FITS(p, (UWORD)w * (UWORD)p->bpp, h)) {
-        ULONG f = board.faults;
-        BOOL done = board.expandRect(&board, p->vramOff, p->bpr, p->bpp, x, y, w, h,
-                                     src, mod, fg, bg, tr);
-        if (board.faults != f)
+    if (HW_OK(p) && b->expandRect && FITS(p, (UWORD)w * (UWORD)p->bpp, h)) {
+        ULONG f = b->faults;
+        BOOL done = b->expandRect(b, p->vramOff, p->bpr, p->bpp, x, y, w, h,
+                                  src, mod, fg, bg, tr);
+        if (b->faults != f)
             return PR_RETRY;
         return done ? PR_DONE : PR_DECLINED;
     }
@@ -309,7 +320,7 @@ struct Regs {
 
 /* ---- pointer.c ------------------------------------------------------ */
 struct ViewPort;
-void pointer_on(struct ViewPort *vp);        /* lock held                 */
+void pointer_on(struct ViewPort *vp, struct PrismCard *c);   /* lock held */
 extern volatile UBYTE pointerPending;        /* a move waits for the lock  */
 void pointer_catchup(void);                  /* lock NOT held: apply it    */
 void pointer_off(void);                      /* lock held                 */

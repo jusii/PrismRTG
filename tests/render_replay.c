@@ -7,7 +7,7 @@
 struct PrismBoard board;
 struct SignalSemaphore lock;
 struct GfxBase *GfxBase=NULL; /* not common: keeps libnix from auto-opening it */
-struct PrismCard cards[MAX_CARDS] = { { &board } }; /* textBad 0: no depth failed */
+struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 } }; /* textBad 0: no depth failed */
 static ULONG hw_calls;
 static enum PrismResult outcome=PR_FAILED;
 void dbg(const char *fmt,...) { (void)fmt; } /* PrismD's debug log */
@@ -32,6 +32,7 @@ int main(void)
     ops.fill=(void *)1;ops.copy=(void *)1;ops.line=(void *)1;ops.expand=(void *)1;
     board.ops=&ops;board.flags=PBF_BLIT_32;
     p.pix=pixels;p.w=64;p.h=8;p.bpr=64;p.bpp=1;p.fmt=PF_CLUT8;p.inVram=TRUE;
+    p.card=&cards[0];p.bd=&board;
     memset(pixels,0x53,sizeof(pixels));
     fill(&p,0,0,63,7,7,255,FALSE);
     for(i=0;i<64*8;i++)assert(pixels[i]==7);

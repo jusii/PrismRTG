@@ -60,7 +60,7 @@ struct IntuitionBase *IntuitionBase;
 struct ExpansionBase *ExpansionBase;
 
 struct PrismBoard board;
-struct PrismCard cards[MAX_CARDS] = { { &board } };
+struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 } };
 
 /* libnix's write() calls __chkabort(), which exits the program on Ctrl-C.
  * PrismD must see Ctrl-C itself and take its patches out first. */
@@ -171,6 +171,7 @@ struct ModeRec {
      * every MoveScreen: dragging a screen cost about 120 ms a step. */
     APTR  recLinks[4];        /* no links: nothing is chained to it      */
     ULONG id;
+    struct PrismCard *card;   /* the board the mode is on                */
     struct PrismMode m;
     UBYTE maxDepth;           /* depth Intuition opens its screens with      */
     UBYTE dimDepth;           /* depth the display database reports: the real
@@ -219,8 +220,6 @@ static struct CardState cst[MAX_CARDS];
 #define modes        (cst[0].modes)
 #define nmodes       (cst[0].nmodes)
 #define prismMonitor (cst[0].monitor)
-#define blk          (cst[0].blk)
-#define nblk         (cst[0].nblk)
 #define shown        (cst[0].shown)
 #define shownVP      (cst[0].shownVP)
 #define cardMode     (cst[0].cardMode)
@@ -320,6 +319,7 @@ static void build_modes(void)
         r->id = PRISM_MONITOR_ID | PREFS_IDLOW(i);
         r->maxDepth = 8;
         r->bpp = pf_bpp(r->m.format);
+        r->card = &cards[0];
         r->dimDepth = r->bpp == 4 ? 32 : bits;
         sprintf(r->name, "PRISM:%ux%u %ubit", r->m.width, r->m.height, r->bpp == 4 ? 32 : bits);
         nmodes++;
@@ -329,73 +329,79 @@ static void build_modes(void)
 /* ---- VRAM allocator: first fit over a sorted list of used blocks --- */
 
 
-LONG vram_alloc(ULONG size, UBYTE format, ULONG pitch, UWORD width, UWORD height)
+LONG vram_alloc(struct PrismCard *c, ULONG size, UBYTE format, ULONG pitch, UWORD width, UWORD height)
 {
+    struct PrismBoard *B = c->b;
+    struct CardState *cs = &cst[c->index];
     ULONG pos = 0;
     int i, j;
 
     if (!size || size > 0xffffff00UL) return -1;
-    if (board.ops && board.ops->allocate) {
+    if (B->ops && B->ops->allocate) {
         struct PrismSurface surface={NULL,0,size,pitch,width,height,format,0,PSF_VRAM};
         surface.bpp=board_bpp(format);
-        if (!board.ops->release || nblk == MAX_BLKS || !board.ops->allocate(&board,&surface)) return -1;
+        if (!B->ops->release || cs->nblk == MAX_BLKS || !B->ops->allocate(B,&surface)) return -1;
         pos=surface.offset;
-        if (pos>board.vramSize || size>board.vramSize-pos) goto reject;
-        for (i=0;i<nblk && blk[i].off<pos;i++);
-        if ((i && blk[i-1].off+blk[i-1].size>pos) ||
-            (i<nblk && pos+size>blk[i].off)) goto reject;
-        for (j=nblk;j>i;j--) blk[j]=blk[j-1];
-        blk[i].off=pos;blk[i].size=size;nblk++;
+        if (pos>B->vramSize || size>B->vramSize-pos) goto reject;
+        for (i=0;i<cs->nblk && cs->blk[i].off<pos;i++);
+        if ((i && cs->blk[i-1].off+cs->blk[i-1].size>pos) ||
+            (i<cs->nblk && pos+size>cs->blk[i].off)) goto reject;
+        for (j=cs->nblk;j>i;j--) cs->blk[j]=cs->blk[j-1];
+        cs->blk[i].off=pos;cs->blk[i].size=size;cs->nblk++;
         return pos;
 reject:
-        board.ops->release(&board,pos);
+        B->ops->release(B,pos);
         return -1;
     }
     size = (size + 255) & ~255UL;
-    if (nblk == MAX_BLKS)
+    if (cs->nblk == MAX_BLKS)
         return -1;
-    for (i = 0; i <= nblk; i++) {
-        ULONG end = (i < nblk) ? blk[i].off : board.vramSize;
+    for (i = 0; i <= cs->nblk; i++) {
+        ULONG end = (i < cs->nblk) ? cs->blk[i].off : B->vramSize;
         if (end - pos >= size) {
-            for (j = nblk; j > i; j--)
-                blk[j] = blk[j - 1];
-            blk[i].off = pos;
-            blk[i].size = size;
-            nblk++;
+            for (j = cs->nblk; j > i; j--)
+                cs->blk[j] = cs->blk[j - 1];
+            cs->blk[i].off = pos;
+            cs->blk[i].size = size;
+            cs->nblk++;
             return pos;
         }
-        if (i < nblk)
-            pos = blk[i].off + blk[i].size;
+        if (i < cs->nblk)
+            pos = cs->blk[i].off + cs->blk[i].size;
     }
     return -1;
 }
 
 /* Free VRAM in bytes and the biggest free piece (lock held). */
-ULONG vram_free_bytes(ULONG *largest)
+ULONG vram_free_bytes(struct PrismCard *c, ULONG *largest)
 {
+    struct PrismBoard *B = c->b;
+    struct CardState *cs = &cst[c->index];
     ULONG pos = 0, total = 0, big = 0;
     int i;
-    for (i = 0; i <= nblk; i++) {
-        ULONG end = (i < nblk) ? blk[i].off : board.vramSize;
+    for (i = 0; i <= cs->nblk; i++) {
+        ULONG end = (i < cs->nblk) ? cs->blk[i].off : B->vramSize;
         ULONG gap = end > pos ? end - pos : 0;
         total += gap;
         if (gap > big) big = gap;
-        if (i < nblk)
-            pos = blk[i].off + blk[i].size;
+        if (i < cs->nblk)
+            pos = cs->blk[i].off + cs->blk[i].size;
     }
     if (largest) *largest = big;
     return total;
 }
 
-void vram_free(ULONG off)
+void vram_free(struct PrismCard *c, ULONG off)
 {
+    struct PrismBoard *B = c->b;
+    struct CardState *cs = &cst[c->index];
     int i;
-    for (i = 0; i < nblk; i++)
-        if (blk[i].off == off) {
-            if (board.ops && board.ops->release) board.ops->release(&board,off);
-            for (; i < nblk - 1; i++)
-                blk[i] = blk[i + 1];
-            nblk--;
+    for (i = 0; i < cs->nblk; i++)
+        if (cs->blk[i].off == off) {
+            if (B->ops && B->ops->release) B->ops->release(B,off);
+            for (; i < cs->nblk - 1; i++)
+                cs->blk[i] = cs->blk[i + 1];
+            cs->nblk--;
             return;
         }
 }
@@ -453,7 +459,7 @@ static BOOL show_pbm(struct PBitMap *p)
         return FALSE;
     }
     if (!pbm_upload(p)) return FALSE;
-    board.setDisplayStart(&board, p->vramOff);
+    p->bd->setDisplayStart(p->bd, p->vramOff);
     shownPbm = p;
     p->lastShown = ++showStamp;
     return TRUE;
@@ -546,7 +552,8 @@ static void push_palette(struct ViewPort *vp)
         ps_colours(ps_by_vp(vp), vp->ColorMap, n);
         for (i = 0; i < n * 3; i++)
             palRGB[i] = palTab[i] >> 24;
-        board.setPalette(&board, 0, n, palRGB);
+        struct PrismBoard *B = shown ? shown->mode->card->b : cards[0].b;
+        B->setPalette(B, 0, n, palRGB);
     }
     pointer_colours(vp);
 }
@@ -634,18 +641,20 @@ static void update_display(void)
     ps = ps_by_screen(s);
     dbg("LoadView: front %lx %s\n", (ULONG)s, ps ? "PRISM" : "native");
     if (ps) {
+        struct PrismCard *c = ps->mode->card;
+        struct PrismBoard *B = c->b;
         struct PBitMap *dp = ps->front ? ps->front : ps->pbm;
         if (cardMode != ps->mode) {
             present_stop();
             struct PrismMode m = ps->mode->m;
             /* Rebuilding the pool releases the old scanout allocation. */
-            if ((board.flags & PBF_REINIT) && rtgOn) {
-                board.setSwitch(&board, FALSE);
+            if ((B->flags & PBF_REINIT) && rtgOn) {
+                B->setSwitch(B, FALSE);
                 rtgOn = FALSE;
             }
-            if (!pbm_prepare_mode() || !board.setMode(&board, &m)) {
+            if (!pbm_prepare_mode(c) || !B->setMode(B, &m)) {
                 pointer_off();
-                board.setSwitch(&board, FALSE);
+                B->setSwitch(B, FALSE);
                 rtgOn = FALSE;
                 shown = NULL;
                 shownPbm = NULL;
@@ -662,10 +671,10 @@ static void update_display(void)
             shown = ps;
             shownVP = &s->ViewPort;
             push_palette(shownVP);
-            pointer_on(shownVP);          /* a mode set turns it off too */
+            pointer_on(shownVP, c);       /* a mode set turns it off too */
         }
         if (!rtgOn) {
-            board.setSwitch(&board, TRUE);
+            B->setSwitch(B, TRUE);
             rtgOn = TRUE;
         }
     } else {
@@ -1082,7 +1091,7 @@ static void palette_one(struct ViewPort *vp, ULONG n, ULONG r, ULONG g, ULONG b)
                 ps->penTab[n] = rgb16(ps->mode->m.format, c[0], c[1], c[2]);
             if (vp == shownVP) {
                 if (!shown || shown->mode->bpp == 1)
-                    board.setPalette(&board, n, 1, c);
+                    ps->mode->card->b->setPalette(ps->mode->card->b, n, 1, c);
                 if (n >= 16 && n < 32)           /* the pointer's colours live here */
                     pointer_colours(vp);
             }
@@ -1207,7 +1216,7 @@ struct PBitMap *screen_bitmap_hook(ULONG w, ULONG h, ULONG depth, ULONG flags)
         return NULL;
     if (!(ps = AllocVec(sizeof(*ps), MEMF_PUBLIC | MEMF_CLEAR)))
         return NULL;
-    if (!(ps->pbm = pbm_new(w, h, depth ? depth : 1, mr->m.format,
+    if (!(ps->pbm = pbm_new(mr->card, w, h, depth ? depth : 1, mr->m.format,
                             mr->bpp == 2 ? ps->penTab : NULL, TRUE, TRUE)) ||
         ps->pbm->bpr != mr->m.bytesPerRow) {
         pbm_free(ps->pbm);
@@ -1323,7 +1332,7 @@ static struct Screen *open_prism_screen(struct ModeRec *mr, struct NewScreen *ns
     /* the screen's chunky bitmap, cleared, in VRAM if it fits (else fast
      * RAM until it is shown); its row size must be the mode's (modes are
      * multiples of 8 pixels wide, so it is) */
-    if (!(ps->pbm = pbm_new(w, h, depth, mr->m.format, mr->bpp == 2 ? ps->penTab : NULL,
+    if (!(ps->pbm = pbm_new(mr->card, w, h, depth, mr->m.format, mr->bpp == 2 ? ps->penTab : NULL,
                             TRUE, TRUE)) || ps->pbm->bpr != mr->m.bytesPerRow) {
         dbg("open: no memory for %lux%lu\n", w, h);
         pbm_free(ps->pbm);
@@ -1485,8 +1494,8 @@ LONG h_ChangeVPBitMap(struct Regs *r)
     if (vp->RasInfo)
         vp->RasInfo->BitMap = bm;
     ps->front = (p == ps->pbm) ? NULL : p;
-    if (ps == shown && show_pbm(p) && board.waitVBlank)
-        board.waitVBlank(&board);
+    if (ps == shown && show_pbm(p) && p->bd->waitVBlank)
+        p->bd->waitVBlank(p->bd);
     ReleaseSemaphore(&lock);
     if (db) {
         if (db->dbi_DispMessage.mn_ReplyPort)
@@ -1699,7 +1708,7 @@ static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const ch
     testPen[1] = rgb16(fmt, 255, 255, 255);
     testRgb[0] = 0;
     testRgb[1] = 0xffffff;
-    if (!(p = pbm_new(width, height, 8, fmt, testPen, TRUE, FALSE)))
+    if (!(p = pbm_new(&cards[0], width, height, 8, fmt, testPen, TRUE, FALSE)))
         return PRISM_TEST_NOMEM;
     p->fmt = fmt;
     p->rgbTab = testRgb;
@@ -1747,7 +1756,7 @@ static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const ch
     cardMode = NULL;                     /* the next real screen sets its own */
     shown = NULL;
     shownVP = NULL;
-    board.setDisplayStart(&board, p->vramOff);
+    p->bd->setDisplayStart(p->bd, p->vramOff);
     shownPbm = p;
     if (fmt == PF_CLUT8) {
         testPal[3] = testPal[4] = testPal[5] = 255;
@@ -2265,7 +2274,7 @@ int main(void)
         struct PrismMode m = modes[0].m;
         if (!board.setMode(&board, &m)) { puts("PrismD: initial mode failed");goto out; }
         if (prefs.blitter && board.modeReady) board.modeReady(&board);
-        selftest_text();
+        selftest_text(&cards[0]);
         board.setSwitch(&board, FALSE);
         cardMode = &modes[0];
     }
@@ -2322,12 +2331,12 @@ int main(void)
     sem.drawLock = &lock;
     sem.logLevel = &prefs.log;
     sem.boardFlags = &board.flags;
-    sem.hwOps = (board.fillRect || BOARD_CAN(fill) ? PRISM_HW_FILL : 0) |
-                (board.copyRect || BOARD_CAN(copy) ? PRISM_HW_COPY : 0) |
+    sem.hwOps = (board.fillRect || BOARD_CAN(&board, fill) ? PRISM_HW_FILL : 0) |
+                (board.copyRect || BOARD_CAN(&board, copy) ? PRISM_HW_COPY : 0) |
                 (board.copyBetween ? PRISM_HW_BETWEEN : 0) |
-                (board.expandRect || BOARD_CAN(expand) ? PRISM_HW_TEXT : 0) |
-                (board.drawLine || BOARD_CAN(line) ? PRISM_HW_LINE : 0) |
-                (BOARD_CAN(planar) ? PRISM_HW_PLANAR : 0);
+                (board.expandRect || BOARD_CAN(&board, expand) ? PRISM_HW_TEXT : 0) |
+                (board.drawLine || BOARD_CAN(&board, line) ? PRISM_HW_LINE : 0) |
+                (BOARD_CAN(&board, planar) ? PRISM_HW_PLANAR : 0);
     AddSemaphore(&sem.ss);
     printf("PrismD: running (Ctrl-C to quit)\n");
     STAGE("running");

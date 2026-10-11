@@ -62,12 +62,12 @@ void present_stop(void)
     struct PBitMap *front=prism_display_bitmap();
     retryTicks=0;failedInput=NULL;
     if (!allocated) return;
-    if (front && front->inVram) board.setDisplayStart(&board,front->vramOff);
-    board.flags &= ~PBF_PRESENT;
+    if (front && front->inVram) frame.bd->setDisplayStart(frame.bd,front->vramOff);
+    frame.bd->flags &= ~PBF_PRESENT;
     if (!owned && input && input->inVram) {
         input->uploadValid=FALSE;pbm_upload(input);
     }
-    if (owned) vram_free(frame.vramOff);
+    if (owned) vram_free(frame.card, frame.vramOff);
     FreeVec(frame.pix); FreeVec(previous); FreeVec(rowMode); FreeVec(prevMode); FreeVec(rowDirty);
     memset(&frame,0,sizeof(frame));previous=NULL;rowMode=prevMode=rowDirty=NULL;
     allocated=valid=owned=FALSE;input=NULL;
@@ -80,11 +80,11 @@ static BOOL prepare(struct PBitMap *front,UWORD width,UWORD height)
     if (front==failedInput && width==failedWidth && height==failedHeight &&
         retryTicks) { retryTicks--;return FALSE; }
     present_stop();
-    pitch=board.ops && board.ops->pitch ? board.ops->pitch(&board,width,height,front->fmt) :
-        board.bytesPerRow ? board.bytesPerRow(&board,width,height,front->bpp) :
+    pitch=front->bd->ops && front->bd->ops->pitch ? front->bd->ops->pitch(front->bd,width,height,front->fmt) :
+        front->bd->bytesPerRow ? front->bd->bytesPerRow(front->bd,width,height,front->bpp) :
         (((ULONG)width*front->bpp+7)&~7UL);
     if (!pitch || pitch<width*front->bpp || pitch>0x7fffffffUL/height) return FALSE;
-    if ((board.flags & PBF_SHADOW) && front->inVram && front->w>=width && front->h>=height)
+    if ((front->bd->flags & PBF_SHADOW) && front->inVram && front->w>=width && front->h>=height)
         pitch=front->bpr;
     size=pitch*height;
     frame.pix=AllocVec(size,MEMF_PUBLIC|MEMF_CLEAR);
@@ -94,16 +94,17 @@ static BOOL prepare(struct PBitMap *front,UWORD width,UWORD height)
     rowDirty=AllocVec(height,MEMF_ANY);
     if (!frame.pix || !previous || !rowMode || !prevMode || !rowDirty) goto fail;
     memset(prevMode,ROW_HW,height);          /* nothing uploaded yet: no row comparable */
-    owned=!(board.flags & PBF_SHADOW) || !front->inVram || front->w<width || front->h<height;
+    owned=!(front->bd->flags & PBF_SHADOW) || !front->inVram || front->w<width || front->h<height;
     /* hidden screens move to fast RAM to make room (a 2 MB card holds
      * the shown screen, its composed copy and little else) */
-    off=owned ? vram_get_size(size,front->fmt,pitch,width,height,front) : (LONG)front->vramOff;
+    off=owned ? vram_get_size(front->card,size,front->fmt,pitch,width,height,front) : (LONG)front->vramOff;
     if (off<0) goto fail;
     frame.w=width;frame.h=height;frame.bpr=pitch;frame.bpp=front->bpp;
-    frame.fmt=front->fmt;frame.vramOff=off;frame.inVram=TRUE;pbm_fits(&frame);
+    frame.fmt=front->fmt;frame.vramOff=off;frame.inVram=TRUE;
+    frame.card=front->card;frame.bd=front->bd;pbm_fits(&frame);
     allocated=TRUE;input=front;valid=FALSE;
     if (!owned) {
-        board.flags|=PBF_PRESENT;front->uploadValid=FALSE;
+        front->bd->flags|=PBF_PRESENT;front->uploadValid=FALSE;
         if(front->uploaded) { FreeVec(front->uploaded);front->uploaded=NULL; }
     }
     return TRUE;
@@ -143,12 +144,12 @@ static void band_blit(const struct PBitMap *front,WORD y0,WORD y1,WORD top)
     WORD sy0=y0-top;
     while (y0<y1) {
         UWORD n=y1-y0;
-        if (board.blitMaxRows && n>board.blitMaxRows) n=board.blitMaxRows;
-        board.copyBetween(&board,front->vramOff+(ULONG)sy0*front->bpr,front->bpr,
+        if (frame.bd->blitMaxRows && n>frame.bd->blitMaxRows) n=frame.bd->blitMaxRows;
+        frame.bd->copyBetween(frame.bd,front->vramOff+(ULONG)sy0*front->bpr,front->bpr,
                           frame.vramOff+(ULONG)y0*frame.bpr,frame.bpr,wbytes,n);
         y0+=n;sy0+=n;
     }
-    if (board.waitBlit) board.waitBlit(&board);
+    if (frame.bd->waitBlit) frame.bd->waitBlit(frame.bd);
 }
 
 static inline WORD clampw(LONG v,WORD lo,WORD hi) { return v<lo ? lo : v>hi ? hi : (WORD)v; }
@@ -190,9 +191,9 @@ void present_tick(void)
         bandY1=(LONG)top+front->h>height ? height : top+front->h;
     }
     hwBand = bandY1>bandY0 && owned && front->inVram && front->w>=width &&
-        front->fmt==frame.fmt && board.copyBetween &&
-        !(board.flags & (PBF_SHADOW|PBF_SOFTWARE|PBF_ACCEL_BROKEN|PBF_PRESENT)) &&
-        hw_fits((UWORD)(width*frame.bpp),1,front->bpr>frame.bpr ? front->bpr : frame.bpr);
+        front->fmt==frame.fmt && frame.bd->copyBetween &&
+        !(frame.bd->flags & (PBF_SHADOW|PBF_SOFTWARE|PBF_ACCEL_BROKEN|PBF_PRESENT)) &&
+        hw_fits(frame.bd,(UWORD)(width*frame.bpp),1,front->bpr>frame.bpr ? front->bpr : frame.bpr);
     /* rows in the band that carry something on top of the front: read
      * back from the front and composed by the CPU */
     if (hwBand) {
@@ -227,7 +228,7 @@ void present_tick(void)
         }
         map=backMap;
     }
-    if (board.waitBlit) board.waitBlit(&board);
+    if (frame.bd->waitBlit) frame.bd->waitBlit(frame.bd);
 
     wrow=(ULONG)(front->w<width ? front->w : width)*frame.bpp;
     for (y=0;y<height;y++) {
@@ -285,14 +286,14 @@ void present_tick(void)
         if (valid && prevMode[y]!=ROW_HW && mode==ROW_CPU &&
             !changed_span(frame.pix+off,previous+off,frame.bpr,&first,&count)) continue;
         off+=first;
-        if (board.ops && board.ops->write) {
-            if (!board.ops->write(&board,&surface,off,frame.pix+off,count)) break;
-        } else CopyMem(frame.pix+off,board.vram+frame.vramOff+off,count);
+        if (frame.bd->ops && frame.bd->ops->write) {
+            if (!frame.bd->ops->write(frame.bd,&surface,off,frame.pix+off,count)) break;
+        } else CopyMem(frame.pix+off,frame.bd->vram+frame.vramOff+off,count);
         CopyMem(frame.pix+off,previous+off,count);
         prevMode[y]=mode;
     }
     if (y==height) {
-        valid=TRUE;board.setDisplayStart(&board,frame.vramOff);
+        valid=TRUE;frame.bd->setDisplayStart(frame.bd,frame.vramOff);
         seenScreen=screen;seenFront=front;seenBack=back;seenTop=top;seenBackTop=backTop;
         seenPX=posX;seenPY=posY;seenPal=paletteGen;seenPip=pipGen;seenHwBand=hwBand;
         seenOv0=ovY0;seenOv1=ovY1;seenFrontMod=front->modified;

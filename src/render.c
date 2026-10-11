@@ -718,7 +718,7 @@ static void __attribute__((noinline)) fill_rgb(struct PBitMap *p, WORD x0, WORD 
         /* These fills overwrite their pixels, so a stopped partial blit
          * can finish on the CPU. The same applies to the solid row below. */
         /* a blitter that takes 4-byte pixels (ZZ9000) */
-        if (b == 4 && p->inVram && BOARD_CAN(fill) && (board.flags & PBF_BLIT_32) &&
+        if (b == 4 && p->inVram && BOARD_CAN(p->bd, fill) && (p->bd->flags & PBF_BLIT_32) &&
             w * (y1 - y0 + 1) >= 12) {
             if (pbm_fill(p, 4, x0, y0, w, y1 - y0 + 1,
                            ((ULONG)px[0] << 24) | ((ULONG)px[1] << 16) | ((ULONG)px[2] << 8) |
@@ -726,14 +726,14 @@ static void __attribute__((noinline)) fill_rgb(struct PBitMap *p, WORD x0, WORD 
         }
         /* a grey (all bytes equal) fills as bytes on the blitter */
         if (px[0] == px[1] && px[1] == px[2] && (b == 3 || px[2] == px[3]) &&
-            p->inVram && BOARD_CAN(fill) && w * (y1 - y0 + 1) > 64) {
+            p->inVram && BOARD_CAN(p->bd, fill) && w * (y1 - y0 + 1) > 64) {
             if (pbm_fill(p, 1, x0 * b, y0, w * b, y1 - y0 + 1, px[0]) == PR_DONE) return;
         }
         for (x = 0, r = rowW; x < w; x++, r += b) {
             r[0] = px[0]; r[1] = px[1]; r[2] = px[2];
             if (b == 4) r[3] = px[3];
         }
-        if (p->inVram && BOARD_CAN(copy) && w * (y1 - y0 + 1) > 256) {
+        if (p->inVram && BOARD_CAN(p->bd, copy) && w * (y1 - y0 + 1) > 256) {
             /* no colour expansion at 24 bits on the 5426/28: write the
              * first row, then let the blitter double it down (1, 2, 4...
              * rows per copy) */
@@ -777,12 +777,12 @@ static void fill(struct PBitMap *p, WORD x0, WORD y0, WORD x1, WORD y1,
     }
     /* the common case, as 1.0 did it: straight to the board's fill hook
      * (pbm_fill's checks, with the limits known to fit for the bitmap) */
-    if (!xor && (mask == 0xff || p->bpp == 2) && p->blitFits && HW_OK(p) && board.fillRect &&
+    if (!xor && (mask == 0xff || p->bpp == 2) && p->blitFits && HW_OK(p) && p->bd->fillRect &&
         w * (y1 - y0 + 1) >= 12) {
-        board.fillRect(&board, p->vramOff, p->bpr, p->bpp, x0, y0, w, y1 - y0 + 1, pixval(p, pen));
-        if (hw_direct() == PR_DONE)
+        p->bd->fillRect(p->bd, p->vramOff, p->bpr, p->bpp, x0, y0, w, y1 - y0 + 1, pixval(p, pen));
+        if (hw_direct(p->bd) == PR_DONE)
             return;
-    } else if (!xor && (mask == 0xff || p->bpp == 2) && p->inVram && BOARD_CAN(fill) &&
+    } else if (!xor && (mask == 0xff || p->bpp == 2) && p->inVram && BOARD_CAN(p->bd, fill) &&
         w * (y1 - y0 + 1) >= 12) {
         if (pbm_fill(p, p->bpp, x0, y0, w, y1 - y0 + 1,
                        pixval(p, pen)) == PR_DONE) return;
@@ -898,7 +898,7 @@ static LONG foreign(LONG (*h)(struct Regs *), struct Regs *r, struct RastPort *r
     if (!shadow || shadow->w != w || shadow->h != hgt) {
         if (shadow)
             pbm_free(shadow);
-        shadow = pbm_new(w, hgt, 8, PF_CLUT8, NULL, FALSE, FALSE);
+        shadow = pbm_new(&cards[0], w, hgt, 8, PF_CLUT8, NULL, FALSE, FALSE);   /* fast RAM */
     }
     if (!shadow) {
         ReleaseSemaphore(&lock);
@@ -1635,8 +1635,8 @@ static void line_solid(struct PBitMap *p, struct LineCtx *l, WORD bx0, WORD by0,
         (y < y1 ? y : y1) >= by0 && (y < y1 ? y1 : y) <= by1) {
         /* long enough to be worth a blitter command (a board with a direct
          * drawLine hook was offered the line already: line_direct) */
-        if (BOARD_CAN(line) && p->inVram && b != 3 && (dx > 40 || dy > 40) &&
-            (b != 4 || (board.flags & PBF_BLIT_32)) && line_hw(p, x, y, x1, y1, pen))
+        if (BOARD_CAN(p->bd, line) && p->inVram && b != 3 && (dx > 40 || dy > 40) &&
+            (b != 4 || (p->bd->flags & PBF_BLIT_32)) && line_hw(p, x, y, x1, y1, pen))
             return;
         line_fast(p, l, ox, oy, pen);
         return;
@@ -1748,14 +1748,14 @@ static __attribute__((noinline)) BOOL line_direct(struct PBitMap *p, struct Line
     WORD x = l->x0 + ox, y = l->y0 + oy, x1 = l->x1 + ox, y1 = l->y1 + oy;
     WORD dx = x1 > x ? x1 - x : x - x1, dy = y1 > y ? y1 - y : y - y1;
     UBYTE b = p->bpp;
-    if (b == 3 || (dx <= 40 && dy <= 40) || (b == 4 && !(board.flags & PBF_BLIT_32)) || !HW_OK(p))
+    if (b == 3 || (dx <= 40 && dy <= 40) || (b == 4 && !(p->bd->flags & PBF_BLIT_32)) || !HW_OK(p))
         return FALSE;
     if ((x < x1 ? x : x1) < bx0 || (x < x1 ? x1 : x) > bx1 ||
         (y < y1 ? y : y1) < by0 || (y < y1 ? y1 : y) > by1)
         return FALSE;                    /* clipped: the usual way */
-    board.drawLine(&board, p->vramOff, p->bpr, b, x, y, x1 - x, y1 - y,
+    p->bd->drawLine(p->bd, p->vramOff, p->bpr, b, x, y, x1 - x, y1 - y,
                    b == 1 ? pen : b == 2 ? pixval(p, pen) : line_colour32(p, pen));
-    return !(board.flags & PBF_ACCEL_BROKEN);
+    return !(p->bd->flags & PBF_ACCEL_BROKEN);
 }
 
 static void line_cb(struct PBitMap *p, WORD bx0, WORD by0, WORD bx1, WORD by1,
@@ -1769,7 +1769,7 @@ static void line_cb(struct PBitMap *p, WORD bx0, WORD by0, WORD bx1, WORD by1,
 
     /* solid pattern, plain JAM1/JAM2 drawing in the foreground pen */
     if (l->ptrn == 0xffff && rp->Mask == 0xff && !(rp->DrawMode & (COMPLEMENT | INVERSVID))) {
-        if (board.drawLine && line_direct(p, l, bx0, by0, bx1, by1, ox, oy, fg))
+        if (p->bd->drawLine && line_direct(p, l, bx0, by0, bx1, by1, ox, oy, fg))
             return;
         line_solid(p, l, bx0, by0, bx1, by1, ox, oy, fg);
         return;
@@ -2074,9 +2074,9 @@ static void tmpl_cb(struct PBitMap *p, WORD bx0, WORD by0, WORD bx1, WORD by1,
 
     /* On the card's blitter (Cirrus colour expansion): JAM1 = transparent,
      * JAM2 = opaque, INVERSVID = the template inverted. */
-    if (BOARD_CAN(expand) && p->inVram && rp->Mask == 0xff && !(dm & COMPLEMENT) &&
+    if (BOARD_CAN(p->bd, expand) && p->inVram && rp->Mask == 0xff && !(dm & COMPLEMENT) &&
         (LONG)w * h >= 64 &&
-        (p->bpp <= 2 || (p->bpp == 4 && (board.flags & PBF_BLIT_32)))) {
+        (p->bpp <= 2 || (p->bpp == 4 && (p->bd->flags & PBF_BLIT_32)))) {
         ULONG rb = ((ULONG)w + 7) >> 3, k, fgv, bgv;
         UBYTE invb = (dm & INVERSVID) ? 0xff : 0;
         LONG sbit0 = t->srcBit + (bx0 - ox - t->tx);
@@ -2457,10 +2457,10 @@ LONG h_BitMapScale(struct Regs *r)
         ULONG c = (ULONG)x * xs / xd;
         col[x] = c < (ULONG)sw ? c : sw - 1;
     }
-    if (s.p && s.p->inVram && board.waitBlit)
-        board.waitBlit(&board);
-    if (d.p && d.p->inVram && board.waitBlit)
-        board.waitBlit(&board);
+    if (s.p && s.p->inVram && s.p->bd->waitBlit)
+        s.p->bd->waitBlit(s.p->bd);
+    if (d.p && d.p->inVram && d.p->bd->waitBlit)
+        d.p->bd->waitBlit(d.p->bd);
     for (y = 0; y < dh; y++) {
         ULONG sy = (ULONG)y * ys / yd;
         if (sy >= (ULONG)sh) sy = sh - 1;

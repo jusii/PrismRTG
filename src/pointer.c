@@ -43,6 +43,9 @@ static WORD  imgW, imgH;                         /* extent of the image    */
 
 /* Software sprite: drawn into the shown bitmap, with what was under it. */
 struct PBitMap *swOn;
+/* the card showing the front screen (pointer_on): its cursor is the pointer */
+static struct PrismCard *ptrCard = &cards[0];
+#define PB (ptrCard->b)
 volatile ULONG prismActivity;
 WORD swX, swY, swW, swH;                        /* drawn rectangle (prismint.h) */
 static ULONG swSeen;
@@ -99,15 +102,15 @@ BOOL pointer_software(void)
     struct PBitMap *front,*back; WORD top,backTop; UWORD w,h;
     if (!on) return FALSE;
     prism_display_layers(&front,&back,&top,&backTop,&w,&h);
-    return prism_software_pointer() || (prism_dragging() && top) || !(board.flags & PBF_HW_CURSOR) ||
-        !board.cursorImage || !board.cursorShow || !board.cursorMove;
+    return prism_software_pointer() || (prism_dragging() && top) || !(PB->flags & PBF_HW_CURSOR) ||
+        !PB->cursorImage || !PB->cursorShow || !PB->cursorMove;
 }
 /* The board's cursor, unless PrismPrefs asks for the software pointer or
  * a composed frame (dragging, PIPs) carries the pointer. */
 static BOOL hardware_pointer(void)
 {
-    return (board.flags & PBF_HW_CURSOR) && board.cursorImage &&
-        board.cursorShow && board.cursorMove && !prism_software_pointer() &&
+    return (PB->flags & PBF_HW_CURSOR) && PB->cursorImage &&
+        PB->cursorShow && PB->cursorMove && !prism_software_pointer() &&
         (!pointer_software() || !present_ready());
 }
 
@@ -120,8 +123,8 @@ void sw_hide(void)
     if (!p)
         return;
     swOn = NULL;
-    if (board.waitBlit)
-        board.waitBlit(&board);
+    if (p->bd->waitBlit)
+        p->bd->waitBlit(p->bd);
     n = (ULONG)swW * p->bpp;
     for (r = 0; r < swH; r++)
         CopyMem(swSave + r * n, p->pix + (ULONG)(swY + r) * p->bpr + (ULONG)swX * p->bpp, n);
@@ -170,8 +173,8 @@ static void sw_draw(struct PBitMap *p)
     for (pen = 1; pen < 4; pen++)
         composite_put(p, pixels[pen], ((ULONG)colours[(pen - 1) * 3] << 16) |
                       ((ULONG)colours[(pen - 1) * 3 + 1] << 8) | colours[(pen - 1) * 3 + 2]);
-    if (board.waitBlit)
-        board.waitBlit(&board);
+    if (p->bd->waitBlit)
+        p->bd->waitBlit(p->bd);
     swX = x0; swY = y0; swW = x1 - x0; swH = y1 - y0;
     n = (ULONG)swW * bpp;
     for (y = y0; y < y1; y++) {
@@ -192,7 +195,7 @@ static void sw_tick(void)
 {
     struct PBitMap *p = prism_display_bitmap();
     BOOL want = on && haveImage && !hardware_pointer() && !present_ready() &&
-        p && !p->locks && !(board.flags & PBF_PRESENT);
+        p && !p->locks && !(p->bd->flags & PBF_PRESENT);
     if (!want) {
         sw_hide();
         return;
@@ -259,7 +262,7 @@ static void apply(void)
 {
     WORD x = posX, y = posY, dx = 0, dy = 0;
     if (!hardware_pointer()) {
-        if (board.cursorShow) board.cursorShow(&board,FALSE);
+        if (PB->cursorShow) PB->cursorShow(PB,FALSE);
         dirtyPos=FALSE;dirtyImage=TRUE;
         return;
     }
@@ -274,18 +277,19 @@ static void apply(void)
         for (r = dy; r < CURSOR_SIZE; r++)
             memcpy(shifted + (r - dy) * CURSOR_SIZE, image + r * CURSOR_SIZE + dx,
                    CURSOR_SIZE - dx);
-        board.cursorImage(&board, shifted, colours);
+        PB->cursorImage(PB, shifted, colours);
         loadedDX = dx;
         loadedDY = dy;
         dirtyImage = FALSE;
     }
-    board.cursorMove(&board, x, y);
+    PB->cursorMove(PB, x, y);
     dirtyPos = FALSE;
 }
 
-/* A Prism screen came to the front (lock held). */
-void pointer_on(struct ViewPort *vp)
+/* A Prism screen came to the front, on card c (lock held). */
+void pointer_on(struct ViewPort *vp, struct PrismCard *c)
 {
+    ptrCard = c;
     vpOn = vp;
     load_colours(vp);
     dirtyImage = TRUE;
@@ -293,7 +297,7 @@ void pointer_on(struct ViewPort *vp)
     on = TRUE;
     if (haveImage) {
         apply();
-        if (hardware_pointer()) board.cursorShow(&board, TRUE);
+        if (hardware_pointer()) PB->cursorShow(PB, TRUE);
     }
 }
 
@@ -301,8 +305,8 @@ void pointer_on(struct ViewPort *vp)
 void pointer_off(void)
 {
     sw_hide();
-    if (on && board.cursorShow)
-        board.cursorShow(&board, FALSE);
+    if (on && PB->cursorShow)
+        PB->cursorShow(PB, FALSE);
     on = FALSE;
     vpOn = NULL;
     present_stop();
@@ -326,7 +330,7 @@ void pointer_tick(void)
         ObtainSemaphore(&lock);
         if (on && haveImage) {
             apply();
-            if (hardware_pointer()) board.cursorShow(&board, TRUE);
+            if (hardware_pointer()) PB->cursorShow(PB, TRUE);
         }
         sw_tick();
         ReleaseSemaphore(&lock);
@@ -346,7 +350,7 @@ static void try_apply(void)
     if (AttemptSemaphore(&lock)) {
         pointerPending = 0;
         apply();
-        if (hardware_pointer()) board.cursorShow(&board, TRUE);
+        if (hardware_pointer()) PB->cursorShow(PB, TRUE);
         ReleaseSemaphore(&lock);
     } else
         pointerPending = 1;

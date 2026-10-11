@@ -217,9 +217,9 @@ static ULONG P_GetBitMapAttr(struct BitMap *bm __asm("a0"), ULONG attr __asm("d0
     case P96BMA_RGBFORMAT:     r = pf2rgbf(p->fmt); break;
     case P96BMA_ISP96:         r = TRUE; break;
     case P96BMA_ISONBOARD:     r = p->inVram ? TRUE : FALSE; break;
-    case P96BMA_BOARDMEMBASE:  r = (ULONG)board.vram; break;
+    case P96BMA_BOARDMEMBASE:  r = (ULONG)p->bd->vram; break;
     case P96BMA_BOARDIOBASE:
-    case P96BMA_BOARDMEMIOBASE: r = (ULONG)board.regs; break;
+    case P96BMA_BOARDMEMIOBASE: r = (ULONG)p->bd->regs; break;
     }
     LOG("GetBitMapAttr %lx %lu -> %lx\n", (ULONG)bm, attr, r);
     return r;
@@ -238,8 +238,8 @@ static LONG P_LockBitMap(struct BitMap *bm __asm("a0"), UBYTE *buf __asm("a1"),
         return 0;
     LOCK_FOR(p);
     p->locks++;
-    if (p->inVram && board.waitBlit)
-        board.waitBlit(&board);
+    if (p->inVram && p->bd->waitBlit)
+        p->bd->waitBlit(p->bd);
     ReleaseSemaphore(&lock);
     ri.Memory = p->pix;
     ri.BytesPerRow = p->bpr;
@@ -670,8 +670,8 @@ static void fill_cb(struct PBitMap *p, WORD bx0, WORD by0, WORD bx1, WORD by1,
     /* on the card where it can: 8- and 16-bit fills, 32-bit on a blitter
      * that takes 4-byte pixels */
     put_pbm(p, px, c->rgb);
-    if (p->inVram && BOARD_CAN(fill) && (LONG)n * (by1 - by0 + 1) >= 12 &&
-        (p->bpp <= 2 || (p->bpp == 4 && (board.flags & PBF_BLIT_32)))) {
+    if (p->inVram && BOARD_CAN(p->bd, fill) && (LONG)n * (by1 - by0 + 1) >= 12 &&
+        (p->bpp <= 2 || (p->bpp == 4 && (p->bd->flags & PBF_BLIT_32)))) {
         ULONG v = p->bpp == 1 ? px[0] : p->bpp == 2 ? (((ULONG)px[0] << 8) | px[1]) : be32(px);
         if (pbm_fill(p,p->bpp,bx0,by0,n,by1-by0+1,v) == PR_DONE) return;
     }
@@ -814,7 +814,7 @@ static struct Window *P_PIP_OpenTagList(struct TagItem *tags __asm("a0"))
     error=PIPERR_NOMEMORY;
     p=AllocVec(sizeof(*p),MEMF_PUBLIC|MEMF_CLEAR);
     if(!p) goto fail;
-    p->source=pbm_new(sw,sh,8,rgbf2pf[format],NULL,FALSE,TRUE);
+    p->source=pbm_new(&cards[0],sw,sh,8,rgbf2pf[format],NULL,FALSE,TRUE);   /* fast RAM */
     if(!p->source) goto fail;
     p->source->rgbTab=p->palette;
     for(i=0;i<256;i++)p->palette[i]=i*0x010101UL;
@@ -996,7 +996,6 @@ unlock:
 
 /* ---- the system and the board --------------------------------------- */
 
-ULONG vram_free_bytes(ULONG *largest);       /* prismd.c */
 
 static LONG P_GetRTGDataTagList(struct TagItem *tags __asm("a0"))
 {
@@ -1019,7 +1018,7 @@ static LONG P_GetBoardDataTagList(ULONG boardNo __asm("d0"), struct TagItem *tag
     if (boardNo != 0)
         return 0;
     LOCK_QUIET();
-    freeBytes = vram_free_bytes(&largest);
+    freeBytes = vram_free_bytes(&cards[0], &largest);
     ReleaseSemaphore(&lock);
     for (i = 1; i < RGBFB_MaxFormats; i++)
         if (rgbf2pf[i] != PF_COUNT && (board.formats & PF_BIT(rgbf2pf[i])))

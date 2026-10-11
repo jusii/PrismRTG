@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include "../src/pointer.c"
 struct PrismBoard board;
+struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 } };
 struct SignalSemaphore lock;
 struct GfxBase *GfxBase=NULL; /* not common: keeps libnix from auto-opening it */
 static ULONG uploads, moves, shows, hides;
@@ -30,15 +31,15 @@ int main(void)
     board.cursorShow=cursor_show;
     haveImage=TRUE;
     board.flags=PBF_HW_CURSOR;
-    pointer_on(NULL);
+    pointer_on(NULL, &cards[0]);
     assert(on && uploads==1 && moves==1 && shows==1);
     board.flags=0; /* The next format requires a software pointer. */
-    pointer_on(NULL);
+    pointer_on(NULL, &cards[0]);
     assert(on && pointer_software() && hides==1 && uploads==1 && moves==1 && shows==1);
     pointer_tick();
     assert(uploads==1 && moves==1 && shows==1);
     board.flags=PBF_HW_CURSOR;
-    pointer_on(NULL);
+    pointer_on(NULL, &cards[0]);
     assert(on && uploads==2 && moves==2 && shows==2);
     puts("Per-mode hardware cursor availability passed");
     return 0;

@@ -741,9 +741,9 @@ static APTR C_LockBitMapTagList(APTR bm __asm("a0"), struct TagItem *tags __asm(
         }
     }
     /* the caller writes the pixels itself: no blit may be running */
-    if (p->inVram && board.waitBlit) {
+    if (p->inVram && p->bd->waitBlit) {
         LOCK_FOR(p);
-        board.waitBlit(&board);
+        p->bd->waitBlit(p->bd);
         ReleaseSemaphore(&lock);
     }
     return p;

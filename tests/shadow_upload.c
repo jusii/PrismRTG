@@ -28,6 +28,7 @@ static void mock_free(APTR p)
 #include "../src/bitmap.c"
 
 struct PrismBoard board;
+struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 } };
 struct SignalSemaphore lock;
 struct GfxBase *GfxBase=NULL; /* not common: keeps libnix from auto-opening it */
 static struct PBitMap bitmap;
@@ -42,9 +43,9 @@ BOOL pbm_is_shown(struct PBitMap *p) { (void)p; return FALSE; }
 void pbm_gone(struct PBitMap *p) { (void)p; }
 struct PBitMap *screen_bitmap_hook(ULONG w,ULONG h,ULONG d,ULONG f)
 { (void)w; (void)h; (void)d; (void)f; return NULL; }
-LONG vram_alloc(ULONG size, UBYTE format, ULONG pitch, UWORD w, UWORD h)
+LONG vram_alloc(struct PrismCard *c, ULONG size, UBYTE format, ULONG pitch, UWORD w, UWORD h)
 { (void)size; (void)format; (void)pitch; (void)w; (void)h; return 0; }
-void vram_free(ULONG off) { assert(off==0); released++; }
+void vram_free(struct PrismCard *c, ULONG off) { (void)c; assert(off==0); released++; }
 
 static BOOL write_device(struct PrismBoard *b, const struct PrismSurface *s,
     ULONG off, const void *data, ULONG count)
@@ -149,6 +150,7 @@ int main(void)
 {
     board.flags=PBF_SHADOW; board.ops=&ops;
     bitmap.pix=pixels; bitmap.mem=pixels;
+    bitmap.card=&cards[0]; bitmap.bd=&board;
     bitmap.w=bitmap.bpr=256; bitmap.h=2; bitmap.bpp=1;
     bitmap.fmt=PF_CLUT8; bitmap.inVram=TRUE;
     test_upload_races();

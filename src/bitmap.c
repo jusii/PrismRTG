@@ -45,16 +45,17 @@ static ULONG pbm_bytes(struct PBitMap *p)
 
 /* VRAM for `size` bytes, evicting least recently shown bitmaps (never
  * `keep`, never one the card shows) until it fits. Caller holds lock. */
-LONG vram_get_size(ULONG size, UBYTE fmt, ULONG pitch, UWORD w, UWORD h, struct PBitMap *keep)
+LONG vram_get_size(struct PrismCard *c, ULONG size, UBYTE fmt, ULONG pitch, UWORD w, UWORD h,
+                   struct PBitMap *keep)
 {
     LONG off;
 
-    while ((off = vram_alloc(size,fmt,pitch,w,h)) < 0) {
+    while ((off = vram_alloc(c,size,fmt,pitch,w,h)) < 0) {
         struct PBitMap *v = NULL;
         UWORD i;
         for (i = 0; i < PBM_MAX; i++) {
             struct PBitMap *q = table[i];
-            if (q && q != keep && q->inVram && !q->locks && !pbm_is_shown(q) &&
+            if (q && q->card == c && q != keep && q->inVram && !q->locks && !pbm_is_shown(q) &&
                 (!v || q->lastShown < v->lastShown))
                 v = q;
         }
@@ -66,19 +67,20 @@ LONG vram_get_size(ULONG size, UBYTE fmt, ULONG pitch, UWORD w, UWORD h, struct 
 
 static LONG vram_get(struct PBitMap *p, struct PBitMap *keep)
 {
-    return vram_get_size(pbm_bytes(p), p->fmt, p->bpr, p->w, p->h, keep);
+    return vram_get_size(p->card, pbm_bytes(p), p->fmt, p->bpr, p->w, p->h, keep);
 }
 
 BOOL pbm_to_fast(struct PBitMap *p)
 {
+    struct PrismBoard *B = p->bd;
     ULONG size = pbm_bytes(p);
     APTR mem;
 
     if (!p->inVram)
         return TRUE;
-    if (p->locks && !(board.flags & PBF_SHADOW)) return FALSE;
-    if ((board.flags & PBF_SHADOW) && p->mem) {
-        vram_free(p->vramOff);
+    if (p->locks && !(B->flags & PBF_SHADOW)) return FALSE;
+    if ((B->flags & PBF_SHADOW) && p->mem) {
+        vram_free(p->card, p->vramOff);
         p->inVram = FALSE;
         if (p->uploaded) FreeVec(p->uploaded);
         p->uploaded = NULL;
@@ -87,10 +89,10 @@ BOOL pbm_to_fast(struct PBitMap *p)
     }
     if (!(mem = AllocVec(size, MEMF_ANY)))
         return FALSE;
-    if (board.waitBlit)
-        board.waitBlit(&board);
+    if (B->waitBlit)
+        B->waitBlit(B);
     CopyMem(p->pix, mem, size);
-    vram_free(p->vramOff);
+    vram_free(p->card, p->vramOff);
     p->mem = mem;
     p->pix = mem;
     p->inVram = FALSE;
@@ -100,47 +102,49 @@ BOOL pbm_to_fast(struct PBitMap *p)
 
 BOOL pbm_to_vram(struct PBitMap *p)
 {
+    struct PrismBoard *B = p->bd;
     ULONG size = pbm_bytes(p);
     LONG off;
 
     if (p->inVram)
         return TRUE;
-    if (((p->locks || p->direct) && !(board.flags & PBF_SHADOW)) ||
+    if (((p->locks || p->direct) && !(B->flags & PBF_SHADOW)) ||
         (off = vram_get(p, p)) < 0)
         return FALSE;
-    if (board.waitBlit)
-        board.waitBlit(&board);
-    if (board.flags & PBF_SHADOW) {
+    if (B->waitBlit)
+        B->waitBlit(B);
+    if (B->flags & PBF_SHADOW) {
         p->inVram = TRUE; p->vramOff = off; p->uploadValid = FALSE;
         if (pbm_upload(p)) return TRUE;
         pbm_to_fast(p);
         return FALSE;
     }
-    CopyMem(p->mem, board.vram + off, size);
+    CopyMem(p->mem, B->vram + off, size);
     FreeVec(p->mem);
     p->mem = NULL;
     p->inVram = TRUE;
     p->vramOff = off;
-    p->pix = board.vram + off;
+    p->pix = B->vram + off;
     dbg("vram: %ux%u x%u into VRAM +%lx\n", p->w, p->h, p->bpp, (ULONG)off);
     return TRUE;
 }
 
 /* A driver's format change may rebuild its VRAM pool. Shadow pointers stay
  * valid even for locked/direct bitmaps while their device storage is freed. */
-BOOL pbm_prepare_mode(void)
+BOOL pbm_prepare_mode(struct PrismCard *c)
 {
     UWORD i;
-    if (!(board.flags & PBF_REINIT)) return TRUE;
-    if (!(board.flags & PBF_SHADOW)) return FALSE;
+    if (!(c->b->flags & PBF_REINIT)) return TRUE;
+    if (!(c->b->flags & PBF_SHADOW)) return FALSE;
     for (i=0;i<PBM_MAX;i++)
-        if (table[i] && table[i]->inVram && !pbm_to_fast(table[i])) return FALSE;
+        if (table[i] && table[i]->card == c && table[i]->inVram && !pbm_to_fast(table[i])) return FALSE;
     return TRUE;
 }
 
-struct PBitMap *pbm_new(UWORD w, UWORD h, UBYTE depth, UBYTE format, UWORD *penTab,
-                        BOOL vram, BOOL clear)
+struct PBitMap *pbm_new(struct PrismCard *c, UWORD w, UWORD h, UBYTE depth, UBYTE format,
+                        UWORD *penTab, BOOL vram, BOOL clear)
 {
+    struct PrismBoard *B = c->b;
     struct PBitMap *p;
     ULONG size;
     UWORD i, slot = PBM_MAX;
@@ -149,6 +153,8 @@ struct PBitMap *pbm_new(UWORD w, UWORD h, UBYTE depth, UBYTE format, UWORD *penT
         return NULL;
     if (!(p = AllocVec(sizeof(*p), MEMF_PUBLIC | MEMF_CLEAR)))
         return NULL;
+    p->card = c;
+    p->bd = B;
     p->w = w;
     p->h = h;
     p->depth = depth;
@@ -156,9 +162,9 @@ struct PBitMap *pbm_new(UWORD w, UWORD h, UBYTE depth, UBYTE format, UWORD *penT
     p->fmt = format;
     p->penTab = penTab;
     p->bpr = ((ULONG)w * p->bpp + 7) & ~7UL; /* 8-byte rows suit both blitters */
-    if (vram && ((board.ops && board.ops->pitch) || board.bytesPerRow)) {
-        p->bpr = board.ops && board.ops->pitch ? board.ops->pitch(&board,w,h,format) :
-                 board.bytesPerRow(&board, w, h, p->bpp);
+    if (vram && ((B->ops && B->ops->pitch) || B->bytesPerRow)) {
+        p->bpr = B->ops && B->ops->pitch ? B->ops->pitch(B,w,h,format) :
+                 B->bytesPerRow(B, w, h, p->bpp);
         if (p->bpr < (ULONG)w * p->bpp) {
             FreeVec(p);
             return NULL;
@@ -185,15 +191,15 @@ struct PBitMap *pbm_new(UWORD w, UWORD h, UBYTE depth, UBYTE format, UWORD *penT
         LONG off;
         LOCK_FOR(p);
         /* vram 2 = free VRAM only (off-screen bitmaps never evict) */
-        off = (vram == 2) ? vram_alloc(pbm_bytes(p),p->fmt,p->bpr,p->w,p->h) : vram_get(p, NULL);
+        off = (vram == 2) ? vram_alloc(c,pbm_bytes(p),p->fmt,p->bpr,p->w,p->h) : vram_get(p, NULL);
         ReleaseSemaphore(&lock);
         if (off >= 0) {
             p->inVram = TRUE;
             p->vramOff = off;
-            p->pix = board.vram + off;
+            p->pix = B->vram + off;
         }
     }
-    if ((board.flags & PBF_PRESENT) || !p->inVram || (board.flags & PBF_SHADOW)) {
+    if ((B->flags & PBF_PRESENT) || !p->inVram || (B->flags & PBF_SHADOW)) {
         if (!(p->mem = AllocVec(size, MEMF_ANY | (clear ? MEMF_CLEAR : 0))))
             goto fail;
         p->pix = p->mem;
@@ -237,7 +243,7 @@ void pbm_free(struct PBitMap *p)
         used--;
     }
     if (p->inVram)
-        vram_free(p->vramOff);
+        vram_free(p->card, p->vramOff);
     ReleaseSemaphore(&lock);
     if (p->dummy) {
         blit_settle();
@@ -283,7 +289,7 @@ LONG h_AllocBitMap(struct Regs *r)
             return 0;
         /* off-screen image buffers in any of these formats; blits to the
          * screen convert */
-        p = pbm_new(r->d[0], r->d[1], depth, fmt,
+        p = pbm_new(f ? f->card : &cards[0], r->d[0], r->d[1], depth, fmt,
                     (f && f->fmt == fmt) ? f->penTab : NULL, FALSE, TRUE);
         if (p) {
             p->fmt = fmt;
@@ -327,7 +333,7 @@ LONG h_AllocBitMap(struct Regs *r)
                     r->d[0] == f->w && r->d[1] == f->h;
         /* other friends go to free VRAM if there is some: blits between
          * them and the screen then run on the card's blitter */
-        p = pbm_new(r->d[0], r->d[1], depth, f->fmt, f->penTab, disp ? 1 : 2, TRUE);
+        p = pbm_new(f->card, r->d[0], r->d[1], depth, f->fmt, f->penTab, disp ? 1 : 2, TRUE);
         if (p && disp)
             p->owner = f->owner;
     }
@@ -396,17 +402,19 @@ void pbm_surface(const struct PBitMap *p, struct PrismSurface *s)
 static BOOL pbm_write(struct PBitMap *p,struct PrismSurface *s,ULONG off,
     const UBYTE *data,ULONG count)
 {
-    if (board.ops && board.ops->write) return board.ops->write(&board,s,off,data,count);
-    if (board.flags & PBF_BANKED) return FALSE;
-    if (board.waitBlit) board.waitBlit(&board);
-    CopyMem((APTR)data,board.vram+p->vramOff+off,count);
+    struct PrismBoard *B = p->bd;
+    if (B->ops && B->ops->write) return B->ops->write(B,s,off,data,count);
+    if (B->flags & PBF_BANKED) return FALSE;
+    if (B->waitBlit) B->waitBlit(B);
+    CopyMem((APTR)data,B->vram+p->vramOff+off,count);
     return TRUE;
 }
 BOOL pbm_upload(struct PBitMap *p)
 {
+    struct PrismBoard *B = p->bd;
     struct PrismSurface s;
     ULONG y;
-    if (!p->inVram || !(board.flags & PBF_SHADOW)) return TRUE;
+    if (!p->inVram || !(B->flags & PBF_SHADOW)) return TRUE;
     pbm_surface(p,&s);
     if (!p->uploaded) p->uploaded = AllocVec(s.allocation, MEMF_ANY);
     if (!p->uploaded) {
@@ -448,22 +456,23 @@ BOOL pbm_upload(struct PBitMap *p)
 static enum PrismResult pbm_result(struct PBitMap *p,enum PrismResult result,
     ULONG xbytes,UWORD y,ULONG rowbytes,UWORD h)
 {
+    struct PrismBoard *B = p->bd;
     struct PrismSurface s;
-    if (result != PR_DECLINED && (board.flags & PBF_SHADOW)) {
+    if (result != PR_DECLINED && (B->flags & PBF_SHADOW)) {
         UWORD row;
         pbm_surface(p,&s);
         for (row=0; row<h; row++) {
             ULONG off=(ULONG)(y+row)*p->bpr+xbytes;
             UBYTE *data=p->uploaded ? p->uploaded+off : p->pix+off;
-            if (board.ops && board.ops->read ?
-                !board.ops->read(&board,&s,off,data,rowbytes) :
-                (board.flags & PBF_BANKED) != 0) {
-                board.flags |= PBF_ACCEL_BROKEN; board.faults++; result=PR_FAILED;
+            if (B->ops && B->ops->read ?
+                !B->ops->read(B,&s,off,data,rowbytes) :
+                (B->flags & PBF_BANKED) != 0) {
+                B->flags |= PBF_ACCEL_BROKEN; B->faults++; result=PR_FAILED;
                 p->uploadValid=FALSE;
                 break;
             }
-            if (!board.ops || !board.ops->read)
-                CopyMem(board.vram+p->vramOff+off,data,rowbytes);
+            if (!B->ops || !B->ops->read)
+                CopyMem(B->vram+p->vramOff+off,data,rowbytes);
             /* As with uploads, history comes from the transfer itself,
              * never a CPU view that an unlocked client may have changed. */
             if (p->uploaded) CopyMem(data,p->pix+off,rowbytes);
@@ -475,16 +484,18 @@ static enum PrismResult pbm_result(struct PBitMap *p,enum PrismResult result,
 void pbm_flush_shown(void)
 {
     UWORD i;
-    if (!(board.flags & PBF_SHADOW) || (board.flags & PBF_PRESENT)) return;
     ObtainSemaphore(&lock);
-    for (i=0;i<PBM_MAX;i++) if (table[i] && pbm_is_shown(table[i]))
-        if (!pbm_upload(table[i])) dbg("driver: aperture upload failed\n");
+    for (i=0;i<PBM_MAX;i++) {
+        struct PBitMap *q = table[i];
+        if (q && (q->bd->flags & PBF_SHADOW) && !(q->bd->flags & PBF_PRESENT) && pbm_is_shown(q))
+            if (!pbm_upload(q)) dbg("driver: aperture upload failed\n");
+    }
     ReleaseSemaphore(&lock);
 }
 /* Surface-operation fast path (boards whose drivers only have ops): build
  * the surface here and call the driver directly. The direct-hook fast
  * paths are inline in prismint.h (pbm_fill, pbm_copy). */
-#define HW_FAST(p) (HW_OK(p) && board.ops)
+#define HW_FAST(p) (HW_OK(p) && (p)->bd->ops)
 
 static inline BOOL hw_rect(const struct PBitMap *p, UWORD x, UWORD y, UWORD w, UWORD h)
 {
@@ -498,82 +509,89 @@ static inline void hw_surface(const struct PBitMap *p, struct PrismSurface *s)
     s->format = p->fmt; s->bpp = p->bpp; s->flags = PSF_VRAM;
 }
 
-static inline enum PrismResult hw_finish(enum PrismResult r)
+static inline enum PrismResult hw_finish(struct PrismBoard *B, enum PrismResult r)
 {
     if (r == PR_DONE || r == PR_DECLINED)
         return r;
-    board.faults++;
+    B->faults++;
     if (r == PR_RETRY)
         return r;
-    board.flags |= PBF_ACCEL_BROKEN;
+    B->flags |= PBF_ACCEL_BROKEN;
     dbg("driver: operation failed; acceleration disabled\n");
     return PR_FAILED;
 }
 
 enum PrismResult pbm_hw_fill(struct PBitMap *p,UBYTE bpp,UWORD x,UWORD y,UWORD w,UWORD h,ULONG c)
 {
+    struct PrismBoard *B = p->bd;
     struct PrismSurface s;
-    if (HW_FAST(p) && board.ops->fill && bpp == p->bpp && bpp != 1 && hw_rect(p,x,y,w,h)) {
+    if (HW_FAST(p) && B->ops->fill && bpp == p->bpp && bpp != 1 && hw_rect(p,x,y,w,h)) {
         hw_surface(p,&s);
-        return hw_finish(board.ops->fill(&board,&s,x,y,w,h,c));
+        return hw_finish(B,B->ops->fill(B,&s,x,y,w,h,c));
     }
-    if ((board.flags & PBF_PRESENT) || !p->inVram || !pbm_upload(p)) return PR_DECLINED;
+    if ((B->flags & PBF_PRESENT) || !p->inVram || !pbm_upload(p)) return PR_DECLINED;
     pbm_surface(p,&s);
     if (bpp==1 && p->bpp!=1) {
-        if (board.flags & PBF_SHADOW) return PR_DECLINED;
+        if (B->flags & PBF_SHADOW) return PR_DECLINED;
         s.format=PF_CLUT8; s.bpp=1; s.width=s.pitch;
     }
     else if (bpp!=p->bpp) return PR_DECLINED;
     /* Byte clears include row padding. */
     if (bpp==1) s.width=s.pitch;
-    return pbm_result(p,board_fill(&board,&s,x,y,w,h,c),(ULONG)x*bpp,y,(ULONG)w*bpp,h);
+    return pbm_result(p,board_fill(B,&s,x,y,w,h,c),(ULONG)x*bpp,y,(ULONG)w*bpp,h);
 }
 enum PrismResult pbm_hw_copy(struct PBitMap *s,struct PBitMap *d,UWORD sx,UWORD sy,
     UWORD dx,UWORD dy,UWORD w,UWORD h)
 {
+    struct PrismBoard *B = s->bd;
     struct PrismSurface a,b;
-    if (HW_FAST(s) && d->inVram && board.ops->copy && s->fmt == d->fmt &&
+    if (d->bd != B)
+        return PR_DECLINED;                /* two boards: the CPU copies */
+    if (HW_FAST(s) && d->inVram && B->ops->copy && s->fmt == d->fmt &&
         hw_rect(s,sx,sy,w,h) && hw_rect(d,dx,dy,w,h)) {
         hw_surface(s,&a);
         if (s == d)
-            return hw_finish(board.ops->copy(&board,&a,&a,sx,sy,dx,dy,w,h));
+            return hw_finish(B,B->ops->copy(B,&a,&a,sx,sy,dx,dy,w,h));
         hw_surface(d,&b);
-        return hw_finish(board.ops->copy(&board,&a,&b,sx,sy,dx,dy,w,h));
+        return hw_finish(B,B->ops->copy(B,&a,&b,sx,sy,dx,dy,w,h));
     }
-    if ((board.flags & PBF_PRESENT) || !s->inVram || !d->inVram || !pbm_upload(s) || (s!=d && !pbm_upload(d))) return PR_DECLINED;
+    if ((B->flags & PBF_PRESENT) || !s->inVram || !d->inVram || !pbm_upload(s) || (s!=d && !pbm_upload(d))) return PR_DECLINED;
     pbm_surface(s,&a); pbm_surface(d,&b);
-    return pbm_result(d,board_copy(&board,&a,&b,sx,sy,dx,dy,w,h),(ULONG)dx*d->bpp,dy,(ULONG)w*d->bpp,h);
+    return pbm_result(d,board_copy(B,&a,&b,sx,sy,dx,dy,w,h),(ULONG)dx*d->bpp,dy,(ULONG)w*d->bpp,h);
 }
 enum PrismResult pbm_hw_expand(struct PBitMap *p,UWORD x,UWORD y,UWORD w,UWORD h,
     const UBYTE *src,ULONG mod,ULONG fg,ULONG bg,BOOL tr)
 {
+    struct PrismBoard *B = p->bd;
     struct PrismSurface s;
-    if (textBad & (1 << p->bpp))
+    if (p->card->textBad & (1 << p->bpp))
         return PR_DECLINED;
-    if (HW_FAST(p) && board.ops->expand && src && mod >= ((ULONG)w + 7) / 8 &&
+    if (HW_FAST(p) && B->ops->expand && src && mod >= ((ULONG)w + 7) / 8 &&
         hw_rect(p,x,y,w,h)) {
         hw_surface(p,&s);
-        return hw_finish(board.ops->expand(&board,&s,x,y,w,h,src,mod,fg,bg,tr));
+        return hw_finish(B,B->ops->expand(B,&s,x,y,w,h,src,mod,fg,bg,tr));
     }
-    if ((board.flags & PBF_PRESENT) || !p->inVram || !pbm_upload(p)) return PR_DECLINED;
+    if ((B->flags & PBF_PRESENT) || !p->inVram || !pbm_upload(p)) return PR_DECLINED;
     pbm_surface(p,&s);
-    return pbm_result(p,board_expand(&board,&s,x,y,w,h,src,mod,fg,bg,tr),(ULONG)x*p->bpp,y,(ULONG)w*p->bpp,h);
+    return pbm_result(p,board_expand(B,&s,x,y,w,h,src,mod,fg,bg,tr),(ULONG)x*p->bpp,y,(ULONG)w*p->bpp,h);
 }
 enum PrismResult pbm_hw_line(struct PBitMap *p,WORD x,WORD y,WORD dx,WORD dy,ULONG c)
 {
+    struct PrismBoard *B = p->bd;
     struct PrismSurface s;
-    if ((board.flags & PBF_PRESENT) || !p->inVram || !pbm_upload(p)) return PR_DECLINED;
+    if ((B->flags & PBF_PRESENT) || !p->inVram || !pbm_upload(p)) return PR_DECLINED;
     pbm_surface(p,&s);
-    return pbm_result(p,board_line(&board,&s,x,y,dx,dy,c),
+    return pbm_result(p,board_line(B,&s,x,y,dx,dy,c),
         (ULONG)(dx<0 ? x+dx : x)*p->bpp,dy<0 ? y+dy : y,
         (ULONG)(dx<0 ? 1-dx : dx+1)*p->bpp,dy<0 ? 1-dy : dy+1);
 }
 enum PrismResult pbm_hw_planar(const struct PrismPlanar *src,struct PBitMap *p,
     UWORD sx,UWORD sy,UWORD dx,UWORD dy,UWORD w,UWORD h,UBYTE mt,UBYTE mask)
 {
+    struct PrismBoard *B = p->bd;
     struct PrismSurface d;
-    if ((board.flags & PBF_PRESENT) || !p->inVram || !board.ops || !board.ops->planar || !pbm_upload(p)) return PR_DECLINED;
+    if ((B->flags & PBF_PRESENT) || !p->inVram || !B->ops || !B->ops->planar || !pbm_upload(p)) return PR_DECLINED;
     pbm_surface(p,&d);
-    return pbm_result(p,board_planar(&board,src,&d,sx,sy,dx,dy,w,h,mt,mask),
+    return pbm_result(p,board_planar(B,src,&d,sx,sy,dx,dy,w,h,mt,mask),
         (ULONG)dx*p->bpp,dy,(ULONG)w*p->bpp,h);
 }

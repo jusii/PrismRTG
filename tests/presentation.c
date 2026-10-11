@@ -8,6 +8,7 @@
 #include "../src/pointer.c"
 
 struct PrismBoard board;
+struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 } };
 struct SignalSemaphore lock;
 struct GfxBase *GfxBase=NULL; /* not common: keeps libnix from auto-opening it */
 struct IntuitionBase *IntuitionBase;
@@ -49,9 +50,9 @@ void p96_pip_compose(struct PBitMap *p,struct Screen *s,WORD top)
         pf_put(p->fmt,0x2468ac,p->pix+p->bpr);
     }
 }
-LONG vram_alloc(ULONG size,UBYTE fmt,ULONG pitch,UWORD w,UWORD h)
+LONG vram_alloc(struct PrismCard *c,ULONG size,UBYTE fmt,ULONG pitch,UWORD w,UWORD h)
 { (void)fmt;(void)pitch;(void)w;(void)h;assert(size==16);allocations++;return failAllocate ? -1 : 128; }
-void vram_free(ULONG off) { assert(off==128);frees++; }
+void vram_free(struct PrismCard *c,ULONG off) { (void)c; assert(off==128);frees++; }
 /* render.c's nearest pen (same weighting), without linking the renderer. */
 UBYTE pen_nearest(const ULONG *tab,ULONG c)
 {
@@ -67,8 +68,8 @@ UBYTE pen_nearest(const ULONG *tab,ULONG c)
     return best;
 }
 /* No other bitmaps to evict here, so this is vram_alloc (as in bitmap.c). */
-LONG vram_get_size(ULONG size,UBYTE fmt,ULONG pitch,UWORD w,UWORD h,struct PBitMap *keep)
-{ (void)keep;return vram_alloc(size,fmt,pitch,w,h); }
+LONG vram_get_size(struct PrismCard *c,ULONG size,UBYTE fmt,ULONG pitch,UWORD w,UWORD h,struct PBitMap *keep)
+{ (void)keep;return vram_alloc(c,size,fmt,pitch,w,h); }
 void pbm_surface(const struct PBitMap *p,struct PrismSurface *s)
 { s->offset=p->vramOff;s->allocation=p->bpr*p->h; }
 BOOL pbm_upload(struct PBitMap *p)
@@ -88,6 +89,7 @@ int main(void)
     struct PrismOps ops={.write=write_pixels};
     UBYTE original[16];ULONG n;
     InitSemaphore(&lock);
+    front.card=back.card=&cards[0];front.bd=back.bd=&board;
     screen.NextScreen=&behindScreen;
     board.vram=video;board.vramSize=sizeof(video);board.ops=&ops;board.setDisplayStart=pan;
     board.copyBetween=copy_between;
@@ -156,6 +158,7 @@ int main(void)
         static ULONG dstPalette[256],srcPalette[256];
         UBYTE srcPixels[2]={1,0},dstPixels[2],map[256];
         struct PBitMap src={0},dst={0};
+        src.card=dst.card=&cards[0];src.bd=dst.bd=&board;
         src.w=dst.w=2;src.h=dst.h=1;src.bpr=dst.bpr=2;
         src.bpp=dst.bpp=1;src.fmt=dst.fmt=PF_CLUT8;
         src.pix=srcPixels;dst.pix=dstPixels;

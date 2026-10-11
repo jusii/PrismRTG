@@ -41,11 +41,11 @@ static ULONG check(struct PBitMap *p, const UBYTE *tmpl, BOOL transparent)
             UBYTE *a = p->pix + (ULONG)y * p->bpr + (ULONG)x * bpp;
             if (bpp == 1) *a = keep; else if (bpp == 2) *(UWORD *)a = keep; else *(ULONG *)a = keep;
         }
-    if (!board.expandRect(&board, p->vramOff, p->bpr, bpp, x0, y0, TW, TH, tmpl, TMOD,
+    if (!p->bd->expandRect(p->bd, p->vramOff, p->bpr, bpp, x0, y0, TW, TH, tmpl, TMOD,
                           fg, bg, transparent))
         return ~0UL;                 /* the board declined: nothing to check */
-    if (board.waitBlit)
-        board.waitBlit(&board);
+    if (p->bd->waitBlit)
+        p->bd->waitBlit(p->bd);
     for (y = 0; y < p->h; y++)
         for (x = 0; x < p->w; x++) {
             ULONG want = keep, got = px_get(p->pix + (ULONG)y * p->bpr + (ULONG)x * bpp, bpp);
@@ -60,7 +60,7 @@ static ULONG check(struct PBitMap *p, const UBYTE *tmpl, BOOL transparent)
     return bad;
 }
 
-void selftest_text(void)
+void selftest_text(struct PrismCard *c)
 {
     static const UBYTE tmpl[TH * TMOD] = {
         0x81, 0x42, 0x24, 0x18, 0xf0, 0,  /* every byte different, the last one */
@@ -71,7 +71,7 @@ void selftest_text(void)
     };
     UBYTE bpp, f;
 
-    if (!board.expandRect || (board.flags & (PBF_SHADOW | PBF_SOFTWARE)))
+    if (!c->b->expandRect || (c->b->flags & (PBF_SHADOW | PBF_SOFTWARE)))
         return;
     for (bpp = 1; bpp <= 4; bpp++) {
         struct PBitMap *p = NULL;
@@ -80,15 +80,15 @@ void selftest_text(void)
             continue;
         /* the first format the board shows at this depth */
         for (f = 0; f < PF_COUNT && !p; f++)
-            if ((board.formats & PF_BIT(f)) && board_bpp(f) == bpp)
-                p = pbm_new(48, 8, 8, f, NULL, 2, TRUE);
+            if ((c->b->formats & PF_BIT(f)) && board_bpp(f) == bpp)
+                p = pbm_new(c, 48, 8, 8, f, NULL, 2, TRUE);
         if (!p)
             continue;
         if (p->inVram && p->bpp == bpp) {
             a = check(p, tmpl, FALSE);
             b = check(p, tmpl, TRUE);
             if ((a != ~0UL && a) || (b != ~0UL && b)) {
-                textBad |= 1 << bpp;
+                c->textBad |= 1 << bpp;
                 printf("PrismD: %u-bit text on the CPU (the board's text blit failed its "
                        "self-test: %lu + %lu pixels wrong)\n", bpp == 1 ? 8 : bpp * 8,
                        (unsigned long)(a == ~0UL ? 0 : a), (unsigned long)(b == ~0UL ? 0 : b));
