@@ -30,7 +30,7 @@
 struct IntuitionBase *IntuitionBase;
 struct GfxBase *GfxBase;
 
-static const char version[] __attribute__((used)) = "$VER: prismgrab 1.1b5 (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: prismgrab " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 #define TEMPLATE "FILE/A,PENS/S"
 

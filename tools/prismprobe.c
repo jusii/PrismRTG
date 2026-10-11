@@ -14,7 +14,7 @@
 #include <exec/semaphores.h>
 #include "../src/prism.h"
 
-static const char version[] __attribute__((used)) = "$VER: PrismProbe 1.1b5 (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: PrismProbe " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 struct ExpansionBase *ExpansionBase;
 

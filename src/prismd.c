@@ -193,7 +193,7 @@ struct ModeRec {
 /* where graphics.library reads a record's mode ID (see above) */
 typedef char modeRecIdAt16[offsetof(struct ModeRec, id) == 16 ? 1 : -1];
 
-static const char version[] __attribute__((used)) = "$VER: PrismD 1.1b5 (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: PrismD " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 #define MAX_MODES PREFS_NMODES        /* every size at every depth */
 

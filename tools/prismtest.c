@@ -26,6 +26,7 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/intuition.h>
+#include "prism.h"
 #include <proto/expansion.h>
 #include <string.h>
 #include <stdio.h>
@@ -35,7 +36,7 @@
 struct ExpansionBase *ExpansionBase;
 struct IntuitionBase *IntuitionBase;
 
-static const char version[] __attribute__((used)) = "$VER: PrismTest 1.1b5 (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: PrismTest " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 #define TEMPLATE "BOARD/K,WIDTH/K/N,HEIGHT/K/N,DEPTH/K/N,SECS/K/N,OFFSET/K,DUMP/S,BLIT/S"
 enum { A_BOARD, A_WIDTH, A_HEIGHT, A_DEPTH, A_SECS, A_OFFSET, A_DUMP, A_BLIT, A_COUNT };

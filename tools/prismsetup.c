@@ -57,7 +57,7 @@
 #include "../src/prism.h"
 #include "../src/prefs.h"
 
-static const char version[] __attribute__((used)) = "$VER: PrismSetup 1.1b5 (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: PrismSetup " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 struct ExpansionBase *ExpansionBase;
 struct Library *IconBase;

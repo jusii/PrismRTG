@@ -49,7 +49,7 @@
 #include "../src/prism.h"
 #include "../src/prefs.h"
 
-static const char version[] __attribute__((used)) = "$VER: PrismUpdate " PRISM_RELEASE " (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: PrismUpdate " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 #define TEMPLATE "GET/S,FETCH/S,SOURCE/K,MIRROR/K,QUIET/S,STK/S"
 enum { A_GET, A_FETCH, A_SOURCE, A_MIRROR, A_QUIET, A_STK, A_COUNT };

@@ -21,6 +21,7 @@
 #ifndef PRISM_RELEASE
 #define PRISM_RELEASE     "1.1b5"
 #endif
+#define PRISM_RELDATE     "10.10.26"      /* the $VER date, dd.mm.yy */
 
 /* Boot failsafe: DEVS:Monitors/Prism creates this before starting PrismD
  * and PrismD deletes it after a minute. Found at boot, it means the last

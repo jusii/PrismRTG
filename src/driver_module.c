@@ -18,6 +18,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "driver_module.h"
+#include "prism.h"
 struct GfxBase *GfxBase;
 struct ExpansionBase *ExpansionBase;
 /* UtilityBase is initialized by libnix before main. */
@@ -31,7 +32,7 @@ unsigned long *__BUFSIZE = &stdioBufSize;
 #ifndef DRIVER_NAME
 #error Build a driver with tools/mkdriver.sh NAME (it defines DRIVER_NAME)
 #endif
-static const char version[] __attribute__((used)) = "$VER: " DRIVER_NAME ".driver 1.1b5 (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: " DRIVER_NAME ".driver " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 /* the request's config: which boards PrismD already drives */
 static const struct PrismDriverConfig *driverConfig;

@@ -22,12 +22,13 @@
 #include <proto/timer.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include "prism.h"
 
 struct GfxBase *GfxBase;
 struct IntuitionBase *IntuitionBase;
 struct Device *TimerBase;
 
-static const char version[] __attribute__((used)) = "$VER: PrismBench 1.1b5 (10.10.26)";
+static const char version[] __attribute__((used)) = "$VER: PrismBench " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
 #define TEMPLATE "MODEID/K,DEPTH/K/N,LIST/S"
 
