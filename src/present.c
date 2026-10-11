@@ -227,6 +227,10 @@ static void present_card(void)
     BOOL showBack,hwBand,full,moved,frontChanged,backChanged,ptrChanged;
     const UBYTE *map=NULL;
     WORD bandY0=0,bandY1=0,ovY0=0,ovY1=0,anyY0=0,anyY1=0,pipY0,pipY1,ptrY0,ptrY1;
+    /* the pointer's position once per compose (input.device moves it
+     * without the lock): what was drawn is what is remembered */
+    WORD px=posX,py=posY;
+    BOOL ptrHere=pointer_is_card(PC);
     ULONG wrow;
     ObtainSemaphore(&lock);
     screen=prism_display_layers(PC,&front,&back,&top,&backTop,&width,&height);
@@ -278,7 +282,7 @@ static void present_card(void)
         p96_pip_volatile(screen);
     backChanged = full || (back && (back->modified!=seenBackMod || volatile_bitmap(back))) ||
         (back && screen->NextScreen && p96_pip_volatile(screen->NextScreen));
-    ptrChanged = full || posX!=seenPX || posY!=seenPY || ovY0!=seenOv0 || ovY1!=seenOv1 ||
+    ptrChanged = full || (ptrHere && (px!=seenPX || py!=seenPY)) || ovY0!=seenOv0 || ovY1!=seenOv1 ||
         anyY0!=seenAny0 || anyY1!=seenAny1;
     if (!frontChanged && !backChanged && !ptrChanged) { ReleaseSemaphore(&lock); return; }
     if (full) idleTicks=0;
@@ -332,16 +336,17 @@ static void present_card(void)
         if (showBack && by>=0 && by<back->h)
             composite_row_mapped(&frame,y,back,by,map);
     }
-    /* after a drag step too: the rows it uncovered were redone from the
-     * screen behind's bitmap */
-    if(showBack && screen->NextScreen && (backChanged || moved))
-        p96_pip_compose(&frame,screen->NextScreen,backTop);
+    /* after a drag step too (the rows it uncovered were redone from the
+     * screen behind's bitmap), and under the pointer; never on the front's
+     * band, which is on top of it */
+    if(showBack && screen->NextScreen && (backChanged || moved || ptrChanged))
+        p96_pip_compose(&frame,screen->NextScreen,backTop,bandY0,bandY1);
     if (hwBand) {
         if (frontChanged) band_blit(front,bandY0,bandY1,top);
         else if (ptrChanged && seenOv1>seenOv0)
             band_blit(front,clampw(seenOv0,bandY0,bandY1),clampw(seenOv1,bandY0,bandY1),top);
     }
-    p96_pip_compose(&frame,screen,top);
+    p96_pip_compose(&frame,screen,top,0,0);
     pointer_compose(&frame,top);
     pbm_surface(&frame,&surface);
     for (y=0;y<height;y++) {
@@ -362,7 +367,7 @@ static void present_card(void)
     if (y==height) {
         valid=TRUE;frame.bd->setDisplayStart(frame.bd,frame.vramOff);
         seenScreen=screen;seenFront=front;seenBack=back;seenTop=top;seenBackTop=backTop;
-        seenPX=posX;seenPY=posY;seenPal=paletteGen;seenPip=pipGen;seenHwBand=hwBand;
+        seenPX=px;seenPY=py;seenPal=paletteGen;seenPip=pipGen;seenHwBand=hwBand;
         seenOv0=ovY0;seenOv1=ovY1;seenFrontMod=front->modified;
         seenBand0=bandY0;seenBand1=bandY1;
         seenAny0=anyY0;seenAny1=anyY1;

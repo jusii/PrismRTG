@@ -192,7 +192,7 @@ static void sw_draw(struct PBitMap *p)
                     row[x * bpp + k] = pixels[pen][k];
     }
     swOn = p;
-    swPX = px; swPY = py;
+    swPX = posX; swPY = posY;                 /* as read: sw_tick compares with posX/posY */
 }
 
 /* PrismD's tick: is the software sprite wanted, and where? (lock held) */
@@ -272,11 +272,12 @@ static void shown_origin(WORD *ox, WORD *oy)
     struct PBitMap *f, *b; WORD top, bt; UWORD w, h;
     struct Screen *s;
     *ox = *oy = 0;
-    if (present_ready(ptrCard))
-        return;
     if ((s = prism_display_layers(ptrCard, &f, &b, &top, &bt, &w, &h))) {
         *ox = s->LeftEdge;
-        *oy = s->TopEdge;
+        /* a composed frame with dragging on has the screen at its TopEdge
+         * already; with dragging off (a PIP) it is composed at row 0 */
+        if (!(present_ready(ptrCard) && prism_dragging()))
+            *oy = s->TopEdge;
     }
 }
 
@@ -345,7 +346,12 @@ void pointer_off(void)
         PB->cursorShow(PB, FALSE);
     on = FALSE;
     vpOn = NULL;
-    present_stop(ptrCard);
+}
+
+/* is the pointer on card c (the board of the screen in front)? */
+BOOL pointer_is_card(const struct PrismCard *c)
+{
+    return c == ptrCard;
 }
 
 /* Palette of the screen on the card changed (lock held). */

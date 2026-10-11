@@ -33,44 +33,26 @@ unsigned long *__BUFSIZE = &stdioBufSize;
 #endif
 static const char version[] __attribute__((used)) = "$VER: " DRIVER_NAME ".driver 1.1b5 (10.10.26)";
 
-/* the boards this driver process has claimed (driver_claim) */
-static struct ConfigDev *claimed[4];
+/* the request's config: which boards PrismD already drives */
+static const struct PrismDriverConfig *driverConfig;
+
+BOOL driver_taken(const struct ConfigDev *cd)
+{
+    int i;
+    if (driverConfig)
+        for (i = 0; i < 4; i++)
+            if (driverConfig->taken[i] == cd)
+                return TRUE;
+    return FALSE;
+}
 
 struct ConfigDev *driver_find(struct ConfigDev *after, ULONG mfr, ULONG prod)
 {
     struct ConfigDev *cd = after;
     while ((cd = FindConfigDev(cd, mfr, prod)))
-        if (!cd->cd_Driver)
+        if (!(cd->cd_Flags & CDF_SHUTUP) && !driver_taken(cd))
             return cd;
     return NULL;
-}
-
-void driver_claim(struct ConfigDev *cd)
-{
-    int i;
-    if (!cd)
-        return;
-    Forbid();
-    if (!cd->cd_Driver)
-        cd->cd_Driver = FindTask(NULL);
-    Permit();
-    for (i = 0; i < 4; i++)
-        if (!claimed[i] || claimed[i] == cd) {
-            claimed[i] = cd;
-            return;
-        }
-}
-
-/* give back what this process claimed: it no longer drives those boards */
-static void unclaim(void)
-{
-    APTR me = FindTask(NULL);
-    int i;
-    Forbid();
-    for (i = 0; i < 4; i++)
-        if (claimed[i] && claimed[i]->cd_Driver == me)
-            claimed[i]->cd_Driver = NULL;
-    Permit();
 }
 
 void driver_module_done(void)
@@ -112,6 +94,7 @@ int main(void)
     ExpansionBase=(struct ExpansionBase *)OpenLibrary("expansion.library",37);
     if(GfxBase && ExpansionBase) control=CreateMsgPort();
     if(control) {
+        driverConfig=&r->config;
         found=driver_probe(&r->board,&r->config);
         r->status=found ? PRD_READY : PRD_NOT_FOUND;
     }
@@ -130,7 +113,6 @@ done:
      * Native drivers return at once; nothing runs shutdown on a mode that
      * was never set, including early no-modes failures. */
     driver_retain();
-    if(ExpansionBase) unclaim();
     if(ExpansionBase)CloseLibrary((struct Library *)ExpansionBase);
     if(GfxBase)CloseLibrary((struct Library *)GfxBase);
     driver_module_done();

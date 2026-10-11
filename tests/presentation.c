@@ -42,8 +42,9 @@ BOOL p96_pip_rows(struct Screen *s,WORD top,WORD *y0,WORD *y1)
 static ULONG bandCopies;
 static void copy_between(struct PrismBoard *b,ULONG src,ULONG spitch,ULONG dst,ULONG dpitch,UWORD w,UWORD h)
 { UWORD r;(void)b;for(r=0;r<h;r++)memcpy(video+dst+r*dpitch,(src<16 ? source : video)+src+r*spitch,w);bandCopies++; }
-void p96_pip_compose(struct PBitMap *p,struct Screen *s,WORD top)
+void p96_pip_compose(struct PBitMap *p,struct Screen *s,WORD top,WORD sk0,WORD sk1)
 {
+    (void)sk0;(void)sk1;
     (void)top;
     if(s==&screen && overlay)pf_put(p->fmt,0x654321,p->pix+p->bpr+p->bpp);
     if(s==&behindScreen && backOverlay) {

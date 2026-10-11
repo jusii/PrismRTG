@@ -26,6 +26,12 @@ enum PrismDriverStatus {
 struct PrismDriverConfig {
     UBYTE clutBGR;
     char card[256], monitor[256];
+    /* boards PrismD already drives (their ConfigDevs): a probe leaves them
+     * alone, so a second copy of a driver takes the second board of a kind
+     * (multi-board.md). Private to one PrismD start - no ConfigDev field is
+     * touched, other software's own claims (cd_Driver, CDF_CONFIGME) are
+     * neither read nor changed. */
+    struct ConfigDev *taken[4];
 };
 /* Shared memory remains live until the module's final acknowledgement.
  * A module exports pointers by remaining alive with its runtime initialized.

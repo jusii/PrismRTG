@@ -672,6 +672,8 @@ static BOOL show_card(UBYTE k)
     struct Screen *s = NULL;
     struct PScreen *ps = card_front(k, &s);
 
+    if (cs->testPbm)                     /* PrismPrefs' Test picture: left alone */
+        return FALSE;
     if (ps) {
         struct PBitMap *dp = ps->front ? ps->front : ps->pbm;
         BOOL changed = FALSE;
@@ -2281,6 +2283,62 @@ static void drop_second(void)
         board2.setSwitch(&board2, FALSE);
     driver_close_slot(1);
     ncards = 1;
+    boardsSwapped = FALSE;
+}
+
+/* PRIMARY=SECOND: the two boards change places (their records and their
+ * driver slots; the drivers keep no pointer to these records). */
+static void swap_boards(void)
+{
+    struct PrismBoard t = board;
+    board = board2;
+    board2 = t;
+    driver_swap_slots();
+    boardsSwapped = !boardsSwapped;
+}
+
+/* Card k from its board: its modes, its first mode programmed now (with
+ * the monitor still showing the Amiga: a cold Cirrus chip drops every CPU
+ * write to VRAM until its linear window is set up, and screens are drawn
+ * before they are shown), its text self-test, its display-database
+ * monitor. FALSE (with the reason printed) if the board is no use. */
+static BOOL init_card(UBYTE k)
+{
+    struct PrismBoard *B = cards[k].b;
+    struct CardState *cs = &cst[k];
+    struct PrismMode m;
+
+    memset(cs, 0, sizeof(*cs));
+    board_defaults(B);
+    if (!prefs.blitter)
+        B->flags |= PBF_SOFTWARE;        /* every blitter path checks it */
+    build_modes(&cards[k]);
+    if (!cs->nmodes) {
+        printf("PrismD: %s offers no usable modes\n", B->name);
+        return FALSE;
+    }
+    m = cs->modes[0].m;
+    if (!B->setMode(B, &m)) {
+        printf("PrismD: %s: initial mode failed\n", B->name);
+        return FALSE;
+    }
+    if (prefs.blitter && B->modeReady) B->modeReady(B);
+    selftest_text(&cards[k]);
+    B->setSwitch(B, FALSE);
+    cs->curMode = &cs->modes[0];
+    /* A copy of the system's monitor, but with a list and a semaphore of
+     * its own: copied, they would point into graphics' own MonitorSpec. */
+    CopyMem(GfxBase->default_monitor, &cs->monitor, sizeof(cs->monitor));
+    cs->monitor.ms_Node.xln_Name = monName[k];
+    cs->monitor.ms_OpenCount = 0;
+    {
+        struct List *l = &cs->monitor.DisplayInfoDataBase;
+        l->lh_Head = (struct Node *)&l->lh_Tail;
+        l->lh_Tail = NULL;
+        l->lh_TailPred = (struct Node *)&l->lh_Head;
+    }
+    InitSemaphore(&cs->monitor.DisplayInfoDataBaseSemaphore);
+    return TRUE;
 }
 
 /* ---- main ----------------------------------------------------------- */
@@ -2380,6 +2438,7 @@ int main(void)
              * another copy has claimed). Its screens get their own monitor,
              * PRISM2:. The first board is as before. */
             if(found && second && prefs.second) {
+                config.taken[0]=board.configDev;   /* the second probe leaves it alone */
                 driverQuiet=TRUE;            /* no board there is the usual case */
                 if(driver_open(&board2,second,&config) || driver_open(&board2,first,&config))
                     ncards=2;
@@ -2389,13 +2448,8 @@ int main(void)
                  * monitor on it, say). The drivers keep no pointer to
                  * these records: swapping them, and their driver slots,
                  * swaps the boards. */
-                if(ncards==2 && prefs.swapBoards) {
-                    struct PrismBoard t=board;
-                    board=board2;
-                    board2=t;
-                    driver_swap_slots();
-                    boardsSwapped=TRUE;
-                }
+                if(ncards==2 && prefs.swapBoards)
+                    swap_boards();
             }
         }
     }
@@ -2404,52 +2458,21 @@ int main(void)
         rc = 5;
         goto out;
     }
-    for (k = 0; k < ncards; k++) {
-        board_defaults(cards[k].b);
-        if (!prefs.blitter)
-            cards[k].b->flags |= PBF_SOFTWARE;   /* every blitter path checks it */
-        build_modes(&cards[k]);
-    }
-    if (!cst[0].nmodes) {
-        printf("PrismD: %s offers no usable modes\n", board.name);
-        goto out;
-    }
-    if (ncards > 1 && !cst[1].nmodes) {
-        printf("PrismD: %s offers no usable modes; only %s is used\n", board2.name, board.name);
-        drop_second();
-    }
-
     InitSemaphore(&lock);
-
-    for (k = 0; k < ncards; k++) {
-        struct PrismBoard *B = cards[k].b;
-        struct CardState *cs = &cst[k];
-        /* Program a mode now, with the monitor still showing the Amiga: a
-         * cold Cirrus chip drops every CPU write to VRAM until its linear
-         * window is set up, and screens are drawn before they are shown. */
-        struct PrismMode m = cs->modes[0].m;
-        if (!B->setMode(B, &m)) {
-            if (!k) { puts("PrismD: initial mode failed");goto out; }
-            printf("PrismD: %s: initial mode failed; only %s is used\n", B->name, board.name);
-            drop_second();
-            break;
-        }
-        if (prefs.blitter && B->modeReady) B->modeReady(B);
-        selftest_text(&cards[k]);
-        B->setSwitch(B, FALSE);
-        cs->curMode = &cs->modes[0];
-        /* A copy of the system's monitor, but with a list and a semaphore of
-         * its own: copied, they would point into graphics' own MonitorSpec. */
-        CopyMem(GfxBase->default_monitor, &cs->monitor, sizeof(cs->monitor));
-        cs->monitor.ms_Node.xln_Name = monName[k];
-        cs->monitor.ms_OpenCount = 0;
-        {
-            struct List *l = &cs->monitor.DisplayInfoDataBase;
-            l->lh_Head = (struct Node *)&l->lh_Tail;
-            l->lh_Tail = NULL;
-            l->lh_TailPred = (struct Node *)&l->lh_Head;
-        }
-        InitSemaphore(&cs->monitor.DisplayInfoDataBaseSemaphore);
+    if (!init_card(0)) {
+        if (!boardsSwapped)
+            goto out;
+        /* the board chosen as the primary is no use: the other one alone,
+         * as it would have been without PRIMARY=SECOND */
+        printf("PrismD: %s cannot be the primary; %s is used alone\n", board.name, board2.name);
+        swap_boards();
+        drop_second();
+        if (!init_card(0))
+            goto out;
+    }
+    if (ncards > 1 && !init_card(1)) {
+        printf("PrismD: only %s is used\n", board.name);
+        drop_second();
     }
 
     STAGE("board found, modes built");

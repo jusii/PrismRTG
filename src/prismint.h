@@ -339,7 +339,8 @@ struct PBitMap *prism_display_bitmap(struct PrismCard *c);   /* what card c show
 UBYTE prism_ncards(void);                    /* boards PrismD drives (1 or 2) */
 struct Screen *prism_display_layers(struct PrismCard *,struct PBitMap **,struct PBitMap **,WORD *,WORD *,UWORD *,UWORD *);
 BOOL p96_pip_active(struct Screen *);
-void p96_pip_compose(struct PBitMap *,struct Screen *,WORD);
+/* the screen's PIPs into the frame; frame rows skipY0..skipY1-1 are left alone */
+void p96_pip_compose(struct PBitMap *,struct Screen *,WORD,WORD skipY0,WORD skipY1);
 /* the frame rows (screenTop added) any PIP of the screen covers; FALSE = none */
 BOOL p96_pip_rows(struct Screen *,WORD screenTop,WORD *y0,WORD *y1);
 /* a PIP source a program can write into without a call PrismD sees */
@@ -347,6 +348,7 @@ BOOL p96_pip_volatile(struct Screen *);
 extern ULONG pipGen;                    /* bumped when a PIP opens, closes or changes */
 /* the frame rows pointer_compose would draw on; FALSE = it draws nothing */
 BOOL pointer_compose_rows(struct PrismCard *c,WORD top,WORD *y0,WORD *y1);
+BOOL pointer_is_card(const struct PrismCard *c);
 extern volatile WORD posX, posY;        /* the pointer's position (pointer.c) */
 void pointer_tick(void);                     /* PrismD main loop          */
 

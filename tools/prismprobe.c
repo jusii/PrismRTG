@@ -11,6 +11,8 @@
 #include <proto/exec.h>
 #include <proto/expansion.h>
 #include <stdio.h>
+#include <exec/semaphores.h>
+#include "../src/prism.h"
 
 static const char version[] __attribute__((used)) = "$VER: PrismProbe 1.1b5 (10.10.26)";
 
@@ -35,6 +37,20 @@ static const char *known(UWORD mfr, UBYTE prod)
     return NULL;
 }
 
+/* is PrismD driving this board now (its PrismSem names its boards)? */
+static BOOL prism_drives(const struct ConfigDev *cd)
+{
+    struct PrismSem *ps;
+    BOOL r = FALSE;
+    Forbid();
+    ps = (struct PrismSem *)FindSemaphore((STRPTR)PRISM_SEMNAME);
+    if (ps && ps->version >= 6)
+        r = (ULONG)cd->cd_BoardAddr == ps->boardAddr[0] ||
+            (ps->numBoards > 1 && (ULONG)cd->cd_BoardAddr == ps->boardAddr[1]);
+    Permit();
+    return r;
+}
+
 int main(void)
 {
     struct ConfigDev *cd = NULL;
@@ -50,7 +66,7 @@ int main(void)
         printf(" %5u/%-3u @ $%08lx size $%08lx %s%s\n",
                cd->cd_Rom.er_Manufacturer, cd->cd_Rom.er_Product,
                (unsigned long)cd->cd_BoardAddr, (unsigned long)cd->cd_BoardSize,
-               (cd->cd_Flags & CDF_CONFIGME) ? "[free] " : "[claimed] ",
+               prism_drives(cd) ? "[PrismD] " : (cd->cd_Flags & CDF_CONFIGME) ? "[free] " : "[claimed] ",
                k ? k : "");
         n++;
         if (k) ours++;

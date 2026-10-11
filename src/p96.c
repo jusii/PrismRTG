@@ -936,7 +936,7 @@ static ULONG pip_bright(ULONG rgb,LONG change)
     return ((ULONG)result[0]<<16)|((ULONG)result[1]<<8)|result[2];
 }
 /* Layer locks are attempted, never waited on while holding the board lock. */
-void p96_pip_compose(struct PBitMap *dst,struct Screen *screen,WORD screenTop)
+void p96_pip_compose(struct PBitMap *dst,struct Screen *screen,WORD screenTop,WORD skipY0,WORD skipY1)
 {
     struct PrismPIP *p;
     struct PBitMap *base=pbm_get(screen->RastPort.BitMap);
@@ -971,7 +971,9 @@ void p96_pip_compose(struct PBitMap *dst,struct Screen *screen,WORD screenTop)
             if(y0+screenTop<0)y0=-screenTop;
             if(x1>dst->w)x1=dst->w;
             if(y1+screenTop>dst->h)y1=dst->h-screenTop;
-            for(y=y0;y<y1;y++)for(x=x0;x<x1;x++) {
+            for(y=y0;y<y1;y++) {
+              if(y+screenTop>=skipY0 && y+screenTop<skipY1)continue;   /* under the front screen */
+              for(x=x0;x<x1;x++) {
                 LONG sx=p->clipleft+(x-left)*cw/width,sy=p->cliptop+(y-top)*ch/height;
                 const UBYTE *src=p->source->pix+sy*p->source->bpr+sx*p->source->bpp;
                 UBYTE *d=dst->pix+(y+screenTop)*dst->bpr+x*dst->bpp;
@@ -987,7 +989,7 @@ void p96_pip_compose(struct PBitMap *dst,struct Screen *screen,WORD screenTop)
                     if(rgb!=lastRGB) { composite_put(dst,lastPixel,rgb);lastRGB=rgb; }
                     for(k=0;k<dst->bpp;k++)d[k]=lastPixel[k];
                 }
-            }
+            }}
         }
 unlock:
         ReleaseSemaphore(&w->WLayer->Lock);

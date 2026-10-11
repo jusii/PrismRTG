@@ -1398,6 +1398,26 @@ static void p2_ready(struct PrismBoard *b)
                                      : "PrismD: no 32-bit blitter (self-test failed)");
 }
 
+/* The memory node of the card whose registers node is `regs`: the one
+ * beside it in the expansion list (a card's two nodes are configured one
+ * after the other) - not just any free node of that product, which with
+ * two cards of a kind could be the other card's. A node whose memory did
+ * not fit (CDF_SHUTUP) is not a card. */
+static struct ConfigDev *mem_beside(struct ConfigDev *regs, ULONG mfr, ULONG prod)
+{
+    struct ConfigDev *n[2] = { (struct ConfigDev *)regs->cd_Node.ln_Succ,
+                               (struct ConfigDev *)regs->cd_Node.ln_Pred };
+    int i;
+    for (i = 0; i < 2; i++) {
+        struct ConfigDev *cd = n[i];
+        if (cd && cd->cd_Node.ln_Succ && cd->cd_Node.ln_Pred &&
+            cd->cd_Rom.er_Manufacturer == mfr && cd->cd_Rom.er_Product == prod &&
+            !(cd->cd_Flags & CDF_SHUTUP) && !driver_taken(cd))
+            return cd;
+    }
+    return NULL;
+}
+
 BOOL Picasso2_Probe(struct PrismBoard *b)
 {
     struct ConfigDev *regs = NULL, *mem = NULL;
@@ -1409,23 +1429,29 @@ BOOL Picasso2_Probe(struct PrismBoard *b)
 
     for (i = 0; i < sizeof(p2_boards) / sizeof(p2_boards[0]); i++) {
         bd = &p2_boards[i];
-        /* the first of its kind no other driver process has taken (a
-         * second copy of this driver drives a second board) */
+        /* the first of its kind PrismD does not drive yet (a second copy
+         * of this driver drives a second board) */
         if (!bd->memProd) {              /* one node with both inside */
-            if ((regs = driver_find(NULL, bd->mfr, bd->regProd)) &&
-                regs->cd_BoardSize >= 0x1000000) {
+            regs = NULL;
+            while ((regs = driver_find(regs, bd->mfr, bd->regProd)))
+                if (regs->cd_BoardSize >= 0x1000000)
+                    break;
+            if (regs) {
                 mem = regs;
                 break;
             }
-        } else if ((regs = driver_find(NULL, bd->mfr, bd->regProd)) &&
-                   (mem = driver_find(NULL, bd->mfr, bd->memProd)))
-            break;
+        } else {
+            regs = NULL;
+            while ((regs = driver_find(regs, bd->mfr, bd->regProd)))
+                if ((mem = mem_beside(regs, bd->mfr, bd->memProd)))
+                    break;
+            if (regs && mem)
+                break;
+        }
         regs = mem = NULL;
     }
     if (!regs || !mem)
         return FALSE;
-    driver_claim(regs);                  /* given back when this driver ends */
-    driver_claim(mem);
 
     b->configDev = regs;
     b->regs      = (volatile UBYTE *)regs->cd_BoardAddr;

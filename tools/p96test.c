@@ -218,7 +218,7 @@ int main(void)
         tagcall(t1, 0, 180);
         /* as many boards as PrismD drives (version 5 knows a second one) */
         Forbid();
-        if ((ps = (struct PrismSem *)FindSemaphore((STRPTR)PRISM_SEMNAME)) && ps->version >= 5)
+        if ((ps = (struct PrismSem *)FindSemaphore((STRPTR)PRISM_SEMNAME)) && ps->version >= 6)
             want = ps->numBoards;
         Permit();
         check("p96GetRTGDataTagList: as many boards as PrismD drives", boards == want);

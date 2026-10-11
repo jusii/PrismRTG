@@ -78,15 +78,15 @@ static void board_status(struct Gui *g, UWORD code)
     char buf[80];
     Forbid();
     s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME);
-    if (s && s->version >= 5 && s->numBoards > 1 && code < 2) {
+    if (s && s->version >= 6 && s->numBoards > 1 && code < 2) {
         /* the primary as running now, and which one this entry makes it
          * (from the next start): running swapped or not, "swapped" means
          * the other one of the two */
         BOOL nowSwapped = s->boardsSwapped;
         BOOL other = (code == 1) != nowSwapped;
-        sprintf(buf, "Primary from the next start: %.20s @%06lx",
+        sprintf(buf, "Primary from the next start: %.20s @%08lx",
                 other ? (s->board2Name ? s->board2Name : "?") : (s->boardName ? s->boardName : "?"),
-                (unsigned long)(s->boardAddr[other ? 1 : 0] & 0xffffff));
+                (unsigned long)s->boardAddr[other ? 1 : 0]);
         Permit();
         set_status(g, buf);
         return;
@@ -195,7 +195,7 @@ static void running_status(struct Gui *g)
 
     Forbid();
     s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME);
-    g->boards = s && s->version >= 5 && s->numBoards > 1 ? 2 : 1;
+    g->boards = s && s->version >= 6 && s->numBoards > 1 ? 2 : 1;
     if (s && g->boards > 1)
         sprintf(buf, "PrismD: %.18s + %.18s. New settings: restart it.",
                 s->boardName ? s->boardName : "?", s->board2Name ? s->board2Name : "?");
@@ -245,7 +245,7 @@ static LONG test_mode(struct Gui *g, LONG i, BOOL ask)
     if ((s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME)) && s->version >= 2) {
         begin = s->testBegin;
         end = s->testEnd;
-        if (s->version >= 5 && g->testOn && s->numBoards > 1)
+        if (s->version >= 6 && g->testOn && s->numBoards > 1)
             beginOn = s->testBeginOn;
     }
     Permit();

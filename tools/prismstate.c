@@ -53,7 +53,7 @@ int main(void)
                ps->boardName ? ps->boardName : "?", ps->version, (unsigned long)ps->numModes);
     if (ps && ps->version >= 4 && ps->boardFlags)
         board_lines("", *ps->boardFlags, ps->hwOps);
-    if (ps && ps->version >= 5 && ps->numBoards > 1 && ps->board2Flags) {
+    if (ps && ps->version >= 6 && ps->numBoards > 1 && ps->board2Flags) {
         printf("Second board \"%s\" at $%08lx (its modes $7a01xxxx, PRISM2:), %lu KB; "
                "the first at $%08lx, %lu KB\n",
                ps->board2Name ? ps->board2Name : "?", (unsigned long)ps->boardAddr[1],
