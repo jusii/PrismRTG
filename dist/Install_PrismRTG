@@ -42,6 +42,16 @@
 (set p96list (getenv "PrismP96List"))
 (set p96left 0)                            ; 1 = Picasso96 stays in place
 
+; In NOVICE mode the Installer answers every question itself with its
+; default (Update, back Picasso96 up, 800x600): the icon says MINUSER=AVERAGE,
+; and a Shell start without it stops here rather than decide for the user.
+(if (= @user-level 0)
+    (abort "Please start this installer from its icon, or from a Shell with\n\n"
+           "   Installer Install_PrismRTG MINUSER AVERAGE\n\n"
+           "It asks what to do about an installed PrismRTG, an installed "
+           "Picasso96 and the Workbench screen; a Novice installation would "
+           "answer those by itself."))
+
 ; ---- install, update or remove -------------------------------------------
 (set mode 0)
 (set fresh (not (exists (tackon mon "Prism"))))   ; a first install, not an update

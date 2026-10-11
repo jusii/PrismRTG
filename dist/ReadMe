@@ -14,7 +14,7 @@ at 800x600 16-bit with MUI and a network stack runs in 2 MB chip + 2 MB
 fast, and 4 MB fast leaves room for the usual programs.
 
 Install:   double-click Install_PrismRTG (the standard Installer), or from a
-           Shell in this drawer:  Installer Install_PrismRTG
+           Shell in this drawer:  Installer Install_PrismRTG MINUSER AVERAGE
            It finds the card, sets the Workbench screen and, if Picasso96
            is installed, lists its monitor files and asks: back them up
            (moved to SYS:Storage/Picasso96-parked, never deleted) or leave

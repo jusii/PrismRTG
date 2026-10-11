@@ -539,7 +539,9 @@ static BOOL get_and_install(const struct Latest *l, BOOL install)
      * (source) paths are relative to it */
     if (!(out = Open("T:PrismRTG-update.script", MODE_NEWFILE)))
         return FALSE;
-    sprintf(script, "CD \"%s\"\n%s Install_PrismRTG APPNAME PrismRTG\n", dir, installer);
+    /* MINUSER AVERAGE as the icon has it: Novice would answer the
+     * installer's questions by itself */
+    sprintf(script, "CD \"%s\"\n%s Install_PrismRTG APPNAME PrismRTG MINUSER AVERAGE\n", dir, installer);
     Write(out, script, strlen(script));
     Close(out);
     say("PrismUpdate: starting the installer (%s)\n", installer);
