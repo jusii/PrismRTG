@@ -30,9 +30,15 @@
  *   PrismSetup P96RESTORE
  *       Move them back (pieces whose old place is taken stay parked).
  *
+ *   PrismSetup WBID=<id>
+ *       Write ENVARC:Sys/screenmode.prefs (used from the next boot) for the Prism mode
+ *       with ModeID $7A00<id> (the low word: depth slot << 8 | size slot, e.g. $0102 =
+ *       800x600 16-bit), 256 pens. Returns 0, or 10. The installer uses this: a ModeID
+ *       never changes when sizes are added.
+ *
  *   PrismSetup WBMODE=<slot>
- *       Write ENVARC:Sys/screenmode.prefs (used from the next boot) for Prism mode slot
- *       <slot> (prefs.h: depth * 8 + size), 256 pens. Returns 0, or 10.
+ *       The same by prefs slot number (prefs.h: depth * PREFS_NSIZES + size). Slot
+ *       numbers move when sizes are added; WBID is the one to use.
  */
 #include <exec/types.h>
 #include <exec/memory.h>
@@ -47,6 +53,7 @@
 #include <proto/icon.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include "../src/prism.h"
 #include "../src/prefs.h"
 
@@ -55,7 +62,7 @@ static const char version[] __attribute__((used)) = "$VER: PrismSetup 1.1b5 (10.
 struct ExpansionBase *ExpansionBase;
 struct Library *IconBase;
 
-#define TEMPLATE "DETECT/S,WBMODE/K/N,P96PARK/S,P96RESTORE/S"
+#define TEMPLATE "DETECT/S,WBMODE/K/N,P96PARK/S,P96RESTORE/S,WBID/K"
 
 static void setenv_str(const char *name, const char *val)
 {
@@ -419,7 +426,7 @@ static int write_wbmode(LONG slot)
 
 int main(void)
 {
-    LONG args[4] = { 0 };
+    LONG args[5] = { 0 };
     struct RDArgs *rda;
     int rc = 0;
 
@@ -427,7 +434,21 @@ int main(void)
         PrintFault(IoErr(), "PrismSetup");
         return 20;
     }
-    if (args[1])
+    if (args[4]) {
+        /* $0102, 0x0102, 0102 or the whole $7A000102: depth slot, size slot */
+        const char *a = (const char *)args[4];
+        ULONG id, depth, size;
+        if (*a == '$') a++;
+        else if (a[0] == '0' && (a[1] == 'x' || a[1] == 'X')) a += 2;
+        id = strtoul(a, NULL, 16) & 0xffff;
+        depth = id >> 8;
+        size = id & 0xff;
+        if (depth >= PREFS_NDEPTHS || size >= PREFS_NSIZES) {
+            printf("PrismSetup: WBID %s is not a PrismRTG mode\n", (const char *)args[4]);
+            rc = 10;
+        } else
+            rc = write_wbmode((LONG)(depth * PREFS_NSIZES + size));
+    } else if (args[1])
         rc = write_wbmode(*(LONG *)args[1]);
     else if (args[2])
         rc = p96_park();

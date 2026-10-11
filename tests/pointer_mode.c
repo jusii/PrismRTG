@@ -9,13 +9,15 @@ struct PrismCard cards[MAX_CARDS] = { { &board, 0, 0 } };
 struct SignalSemaphore lock;
 struct GfxBase *GfxBase=NULL; /* not common: keeps libnix from auto-opening it */
 static ULONG uploads, moves, shows, hides;
-BOOL present_ready(void) { return FALSE; }
-void present_stop(void) {}
+BOOL present_ready(struct PrismCard *c) { (void)c; return FALSE; }
+void present_stop(struct PrismCard *c) { (void)c; }
+void present_invalidate(struct PrismCard *c) { (void)c; }
 BOOL prism_dragging(void) { return FALSE; }
 BOOL prism_software_pointer(void) { return FALSE; }
 /* No shown Prism bitmap: the software sprite has nowhere to draw. */
-struct PBitMap *prism_display_bitmap(void) { return NULL; }
-struct Screen *prism_display_layers(struct PBitMap **f,struct PBitMap **b,
+struct PBitMap *prism_display_bitmap(struct PrismCard *c) { (void)c; return NULL; }
+UBYTE prism_ncards(void) { return 1; }
+struct Screen *prism_display_layers(struct PrismCard *c,struct PBitMap **f,struct PBitMap **b,
     WORD *top,WORD *bt,UWORD *w,UWORD *h)
 { (void)f;(void)b;(void)bt;(void)w;(void)h;*top=0;return NULL; }
 static void cursor_image(struct PrismBoard *b,const UBYTE *pixels,const UBYTE *rgb)

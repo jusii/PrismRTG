@@ -46,6 +46,7 @@ struct PBitMap *swOn;
 /* the card showing the front screen (pointer_on): its cursor is the pointer */
 static struct PrismCard *ptrCard = &cards[0];
 #define PB (ptrCard->b)
+static void shown_origin(WORD *ox, WORD *oy);
 volatile ULONG prismActivity;
 WORD swX, swY, swW, swH;                        /* drawn rectangle (prismint.h) */
 static ULONG swSeen;
@@ -101,7 +102,7 @@ BOOL pointer_software(void)
 {
     struct PBitMap *front,*back; WORD top,backTop; UWORD w,h;
     if (!on) return FALSE;
-    prism_display_layers(&front,&back,&top,&backTop,&w,&h);
+    prism_display_layers(ptrCard,&front,&back,&top,&backTop,&w,&h);
     return prism_software_pointer() || (prism_dragging() && top) || !(PB->flags & PBF_HW_CURSOR) ||
         !PB->cursorImage || !PB->cursorShow || !PB->cursorMove;
 }
@@ -111,7 +112,7 @@ static BOOL hardware_pointer(void)
 {
     return (PB->flags & PBF_HW_CURSOR) && PB->cursorImage &&
         PB->cursorShow && PB->cursorMove && !prism_software_pointer() &&
-        (!pointer_software() || !present_ready());
+        (!pointer_software() || !present_ready(ptrCard));
 }
 
 /* Take the software pointer out again (lock held). */
@@ -160,7 +161,11 @@ static void sw_draw(struct PBitMap *p)
      * lock: take the position once, and clear the flag first so a change
      * made meanwhile draws again on the next tick */
     swDirty = FALSE;
-    px = posX; py = posY;
+    {
+        WORD ox, oy;
+        shown_origin(&ox, &oy);              /* sw_draw: nothing is composed */
+        px = posX - ox; py = posY - oy;
+    }
     x0 = px; y0 = py; x1 = px + imgW; y1 = py + imgH;
     if (x0 < 0) x0 = 0;
     if (y0 < 0) y0 = 0;
@@ -193,8 +198,8 @@ static void sw_draw(struct PBitMap *p)
 /* PrismD's tick: is the software sprite wanted, and where? (lock held) */
 static void sw_tick(void)
 {
-    struct PBitMap *p = prism_display_bitmap();
-    BOOL want = on && haveImage && !hardware_pointer() && !present_ready() &&
+    struct PBitMap *p = prism_display_bitmap(ptrCard);
+    BOOL want = on && haveImage && !hardware_pointer() && !present_ready(ptrCard) &&
         p && !p->locks && !(p->bd->flags & PBF_PRESENT);
     if (!want) {
         sw_hide();
@@ -224,12 +229,13 @@ static void frame_pos(UWORD w, UWORD h, WORD *x, WORD *y)
     if (*y > (WORD)h - 1) *y = h - 1;
 }
 
-BOOL pointer_compose_rows(WORD top,WORD *y0,WORD *y1)
+BOOL pointer_compose_rows(struct PrismCard *c,WORD top,WORD *y0,WORD *y1)
 {
     struct PBitMap *front,*back; WORD t,backTop,x; UWORD w=32767,h=32767;
     (void)top;
-    if (!haveImage || !pointer_software()) return FALSE;
-    prism_display_layers(&front,&back,&t,&backTop,&w,&h);
+    /* only the board showing the front screen has the pointer */
+    if (!haveImage || c != ptrCard || !pointer_software()) return FALSE;
+    prism_display_layers(c,&front,&back,&t,&backTop,&w,&h);
     frame_pos(w,h,&x,y0);*y1=*y0+CURSOR_SIZE;
     return TRUE;
 }
@@ -239,7 +245,7 @@ void pointer_compose(struct PBitMap *dst,WORD top)
     UBYTE pixels[4][4];
     WORD x,y,px,py;UBYTE pen,k;
     (void)top;
-    if (!haveImage || !pointer_software()) return;
+    if (!haveImage || dst->card != ptrCard || !pointer_software()) return;
     frame_pos(dst->w,dst->h,&px,&py);           /* position taken once (see sw_draw) */
     /* Quantize the three sprite colours once, rather than once per pixel. */
     for(pen=1;pen<4;pen++) {
@@ -256,16 +262,37 @@ void pointer_compose(struct PBitMap *dst,WORD top)
         for(k=0;k<dst->bpp;k++)d[k]=pixels[pen][k];
     }
 }
+/* Where the shown screen's origin is on the display. With nothing composed
+ * the board scans the front screen out from its own top left, whatever
+ * its LeftEdge and TopEdge (a screen moved while dragging is off, or
+ * before the compositor has its frame): the pointer, in display
+ * coordinates, then goes at its place on that screen. Lock held. */
+static void shown_origin(WORD *ox, WORD *oy)
+{
+    struct PBitMap *f, *b; WORD top, bt; UWORD w, h;
+    struct Screen *s;
+    *ox = *oy = 0;
+    if (present_ready(ptrCard))
+        return;
+    if ((s = prism_display_layers(ptrCard, &f, &b, &top, &bt, &w, &h))) {
+        *ox = s->LeftEdge;
+        *oy = s->TopEdge;
+    }
+}
+
 /* Push image (shifted for a negative position) and position. Caller holds
  * the lock and the cursor is on. */
 static void apply(void)
 {
-    WORD x = posX, y = posY, dx = 0, dy = 0;
+    WORD x = posX, y = posY, dx = 0, dy = 0, ox, oy;
     if (!hardware_pointer()) {
         if (PB->cursorShow) PB->cursorShow(PB,FALSE);
         dirtyPos=FALSE;dirtyImage=TRUE;
         return;
     }
+    shown_origin(&ox, &oy);
+    x -= ox;
+    y -= oy;
 
     if (x < 0) { dx = -x; x = 0; }
     if (y < 0) { dy = -y; y = 0; }
@@ -289,6 +316,15 @@ static void apply(void)
 /* A Prism screen came to the front, on card c (lock held). */
 void pointer_on(struct ViewPort *vp, struct PrismCard *c)
 {
+    /* the front screen is now on another board: the pointer leaves the
+     * old one (its cursor off, a software sprite taken out) */
+    if (c != ptrCard) {
+        sw_hide();
+        if (on && PB->cursorShow)
+            PB->cursorShow(PB, FALSE);
+        present_invalidate(ptrCard);         /* its composed frame drops the pointer */
+        loadedDX = loadedDY = -1;            /* the new board has no image yet */
+    }
     ptrCard = c;
     vpOn = vp;
     load_colours(vp);
@@ -309,7 +345,7 @@ void pointer_off(void)
         PB->cursorShow(PB, FALSE);
     on = FALSE;
     vpOn = NULL;
-    present_stop();
+    present_stop(ptrCard);
 }
 
 /* Palette of the screen on the card changed (lock held). */
@@ -326,15 +362,16 @@ void pointer_colours(struct ViewPort *vp)
 /* PrismD's main loop, every tick. */
 void pointer_tick(void)
 {
+    /* the lock first: pointer_software() looks at the screens */
+    ObtainSemaphore(&lock);
     if ((on && (dirtyPos || dirtyImage || pointer_software())) || swOn) {
-        ObtainSemaphore(&lock);
         if (on && haveImage) {
             apply();
             if (hardware_pointer()) PB->cursorShow(PB, TRUE);
         }
         sw_tick();
-        ReleaseSemaphore(&lock);
     }
+    ReleaseSemaphore(&lock);
 }
 
 /* A move (from input.device) that found the lock taken: whoever releases
@@ -388,7 +425,7 @@ LONG h_MoveSprite(struct Regs *r)
             /* a hot spot is a small offset up/left; mid-drag the sprite
              * position is a step stale and gives something else */
             WORD h = y - fs->MouseY;
-            if (h > -32 && h <= 0)
+            if (h > -64 && h <= 0)              /* sprites go up to 64 rows */
                 hot = h;
         }
         x = IntuitionBase->MouseX + hot;

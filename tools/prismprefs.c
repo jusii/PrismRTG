@@ -38,8 +38,10 @@ enum { GAD_LIST = 1, GAD_ON, GAD_HZ, GAD_BOARD, GAD_BLIT, GAD_LOG,
        GAD_DRAG, GAD_SOFTPTR };
 
 static STRPTR hzLabels[] = { "Default", "60 Hz", "70 Hz", "72 Hz", "75 Hz", NULL };
-static STRPTR boardLabels[] = { "Auto", "Picasso II", "ZZ9000", "P96 driver", "UAE (native)",
-                                "Other (BOARD= in the prefs file)", NULL };
+/* the Board cycle: Auto twice - every board PrismD finds, or only the
+ * first (SECONDBOARD=OFF) - then the PB_* boards after Auto */
+static STRPTR boardLabels[] = { "Auto", "Auto, 1 board", "Picasso II", "ZZ9000", "P96 driver",
+                                "UAE (native)", "Other (BOARD= in the prefs file)", NULL };
 /* LOG=OFF / ON / SYNC, in that order (prefs.log 0, 1, 2) */
 static STRPTR logLabels[] = { "Off", "On", "Sync", NULL };
 
@@ -54,12 +56,30 @@ struct Gui {
     struct PrismPrefs prefs;
     LONG sel;
     BOOL running;                    /* PrismD is up: show which modes are live */
+    UBYTE boards;                    /* the boards it drives (1 or 2)          */
+    UBYTE testOn;                    /* the board the Test button uses (0, 1)  */
     char status[80];
 };
 
 static struct Gui g;
 
 /* ---- helpers -------------------------------------------------------- */
+
+/* the Board cycle's entry for the prefs, and back */
+static UWORD board_entry(const struct PrismPrefs *p)
+{
+    return p->board == PB_AUTO ? (p->second ? 0 : 1) : p->board + 1;
+}
+
+static void board_from_entry(struct PrismPrefs *p, UWORD code)
+{
+    if (code <= 1) {
+        p->board = PB_AUTO;
+        p->second = code == 0;
+    } else {
+        p->board = code - 1 < PB_COUNT ? code - 1 : PB_AUTO;
+    }
+}
 
 static UWORD rate_index(UBYTE hz)
 {
@@ -73,8 +93,9 @@ static UWORD rate_index(UBYTE hz)
 static void entry_text(struct Gui *g, int i)
 {
     char hz[12];
-    BOOL live = g->running &&
-                !ModeNotAvailable(PRISM_MONITOR_ID | PREFS_IDLOW(i));
+    /* which boards show it now: the first's ModeID and the second's */
+    BOOL live1 = g->running && !ModeNotAvailable(PRISM_CARD_ID(0) | PREFS_IDLOW(i));
+    BOOL live2 = g->running && g->boards > 1 && !ModeNotAvailable(PRISM_CARD_ID(1) | PREFS_IDLOW(i));
 
     if (g->prefs.hz[i])
         sprintf(hz, "%u Hz", g->prefs.hz[i]);
@@ -83,7 +104,8 @@ static void entry_text(struct Gui *g, int i)
     sprintf(g->text[i], "%-3s %4ux%-4u %2u-bit %-7s %s",
             g->prefs.on[i] ? "on" : "--",
             prefs_sizes[PREFS_SIZE(i)][0], prefs_sizes[PREFS_SIZE(i)][1],
-            prefs_depths[PREFS_DEPTH(i)], hz, live ? "live" : "");
+            prefs_depths[PREFS_DEPTH(i)], hz,
+            live1 && live2 ? "live 1+2" : live1 ? (g->boards > 1 ? "live 1" : "live") : live2 ? "live 2" : "");
 }
 
 static void build_list(struct Gui *g)
@@ -123,7 +145,7 @@ static void show_settings(struct Gui *g)
     struct PrismPrefs *p = &g->prefs;
     GT_SetGadgetAttrs(g->gOn, g->win, NULL, GTCB_Checked, (ULONG)p->on[g->sel], TAG_END);
     GT_SetGadgetAttrs(g->gHz, g->win, NULL, GTCY_Active, (ULONG)rate_index(p->hz[g->sel]), TAG_END);
-    GT_SetGadgetAttrs(g->gBoard, g->win, NULL, GTCY_Active, (ULONG)p->board, TAG_END);
+    GT_SetGadgetAttrs(g->gBoard, g->win, NULL, GTCY_Active, (ULONG)board_entry(p), TAG_END);
     GT_SetGadgetAttrs(g->gBlit, g->win, NULL, GTCB_Checked, (ULONG)p->blitter, TAG_END);
     GT_SetGadgetAttrs(g->gLog, g->win, NULL, GTCY_Active, (ULONG)(p->log <= 2 ? p->log : 1), TAG_END);
     GT_SetGadgetAttrs(g->gBgr, g->win, NULL, GTCB_Checked, (ULONG)p->clutBGR, TAG_END);
@@ -138,7 +160,11 @@ static void running_status(struct Gui *g)
 
     Forbid();
     s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME);
-    if (s)
+    g->boards = s && s->version >= 5 && s->numBoards > 1 ? 2 : 1;
+    if (s && g->boards > 1)
+        sprintf(buf, "PrismD: %.18s + %.18s. New settings: restart it.",
+                s->boardName ? s->boardName : "?", s->board2Name ? s->board2Name : "?");
+    else if (s)
         sprintf(buf, "PrismD: %.24s, %lu modes. New settings: restart it.",
                 s->boardName ? s->boardName : "?", (unsigned long)s->numModes);
     Permit();
@@ -172,6 +198,7 @@ static LONG test_mode(struct Gui *g, LONG i, BOOL ask)
 {
     struct PrismSem *s;
     LONG (*begin)(ULONG, ULONG, ULONG, ULONG, const char *) = NULL;
+    LONG (*beginOn)(UBYTE, ULONG, ULONG, ULONG, ULONG, const char *) = NULL;
     void (*end)(void) = NULL;
     UWORD w = prefs_sizes[PREFS_SIZE(i)][0], h = prefs_sizes[PREFS_SIZE(i)][1];
     UBYTE bits = prefs_depths[PREFS_DEPTH(i)], hz = g->prefs.hz[i];
@@ -183,6 +210,8 @@ static LONG test_mode(struct Gui *g, LONG i, BOOL ask)
     if ((s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME)) && s->version >= 2) {
         begin = s->testBegin;
         end = s->testEnd;
+        if (s->version >= 5 && g->testOn && s->numBoards > 1)
+            beginOn = s->testBeginOn;
     }
     Permit();
     if (!begin || !end) {
@@ -192,7 +221,7 @@ static LONG test_mode(struct Gui *g, LONG i, BOOL ask)
     if (hz) sprintf(rate, "%u Hz", hz); else strcpy(rate, "default rate");
     sprintf(label, "PRISM test  %ux%u %u-bit %s  -  back in %d s (any key or click)", w, h,
             bits, rate, TEST_SECS);
-    rc = begin(w, h, bits, hz, label);
+    rc = beginOn ? beginOn(g->testOn, w, h, bits, hz, label) : begin(w, h, bits, hz, label);
     if (rc == PRISM_TEST_NOMODE) {
         set_status(g, "The card can't show that mode at that rate.");
         return rc;
@@ -274,7 +303,7 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     ng.ng_TopEdge = y;
     ng.ng_GadgetText = "Board"; ng.ng_GadgetID = GAD_BOARD;
     gad = g->gBoard = CreateGadget(CYCLE_KIND, gad, &ng, GTCY_Labels, (ULONG)boardLabels,
-                                   GTCY_Active, (ULONG)g->prefs.board, TAG_END);
+                                   GTCY_Active, (ULONG)board_entry(&g->prefs), TAG_END);
 
     y += row;
     ng.ng_TopEdge = y; ng.ng_Width = 26; ng.ng_Height = fh + 3;
@@ -417,7 +446,10 @@ static void event_loop(struct Gui *g)
                     refresh_list(g);
                     break;
                 case GAD_BOARD:
-                    g->prefs.board = code < PB_COUNT ? code : PB_AUTO;
+                    board_from_entry(&g->prefs, code);
+                    if (code <= 1)
+                        set_status(g, code ? "Auto: only the first board PrismD finds"
+                                           : "Auto: every board PrismD finds (two at most)");
                     break;
                 case GAD_BLIT:
                     g->prefs.blitter = (gad->Flags & GFLG_SELECTED) ? 1 : 0;
@@ -447,6 +479,16 @@ static void event_loop(struct Gui *g)
                                   : "Board's own pointer where it has one");
                     break;
                 case GAD_TEST:
+                    /* with two boards: which one shows it */
+                    if (g->boards > 1) {
+                        struct EasyStruct es = { sizeof(struct EasyStruct), 0, "Prism mode test",
+                                                 "Show the test picture on which board?",
+                                                 "First|Second|Cancel" };
+                        LONG b = EasyRequest(g->win, &es, NULL);   /* 1 First, 2 Second, 0 Cancel */
+                        if (!b)
+                            break;
+                        g->testOn = b == 2;
+                    }
                     test_mode(g, g->sel, TRUE);
                     break;
                 case GAD_SAVE:
@@ -473,11 +515,11 @@ static void event_loop(struct Gui *g)
 
 /* ---- main ----------------------------------------------------------- */
 
-#define TEMPLATE "FROM/K,USE/S,SAVE/S,TEST/K/N"
+#define TEMPLATE "FROM/K,USE/S,SAVE/S,TEST/K/N,TESTON/K/N"
 
 int main(void)
 {
-    LONG args[4] = { 0 };
+    LONG args[5] = { 0 };
     struct RDArgs *rda;
     int rc = 20;
 
@@ -514,6 +556,8 @@ int main(void)
             printf("PrismPrefs: TEST takes a mode slot, 0 to %d\n", PREFS_NMODES - 1);
             goto out;
         }
+        g.testOn = args[4] && *(LONG *)args[4] == 2;   /* TESTON=2: the second board */
+        g.boards = 2;                    /* (test_mode asks PrismD whether there is one) */
         rc = test_mode(&g, slot, FALSE);
         printf("PrismPrefs: test of slot %ld: %s\n", (long)slot,
                rc == 0 ? "shown" : g.status);

@@ -27,8 +27,9 @@ BOOL prism_dragging(void) { return dragEnabled; }
 BOOL prism_software_pointer(void) { return forceSoftware; }
 void dbg(const char *fmt,...) { (void)fmt; }
 LONG call_regs(APTR fn,struct Regs *r) { (void)fn;(void)r;return 0; }
-struct PBitMap *prism_display_bitmap(void) { return &front; }
-struct Screen *prism_display_layers(struct PBitMap **f,struct PBitMap **b,
+struct PBitMap *prism_display_bitmap(struct PrismCard *c) { (void)c; return &front; }
+UBYTE prism_ncards(void) { return 1; }
+struct Screen *prism_display_layers(struct PrismCard *c,struct PBitMap **f,struct PBitMap **b,
     WORD *top,WORD *bt,UWORD *w,UWORD *h)
 { *f=&front;*b=nativeBehind ? NULL : &back;*top=screenTop;*bt=backTop;*w=*h=2;return &screen; }
 BOOL p96_pip_active(struct Screen *s) { (void)s;return overlay; }
@@ -175,13 +176,13 @@ int main(void)
     board.cursorMove=cursor_move;board.cursorImage=cursor_image;
     on=haveImage=TRUE;posX=0;posY=1;screenTop=1;failAllocate=TRUE; /* display position */
     n=allocations;present_tick();pointer_tick();
-    assert(!present_ready() && hwVisible && hardwareY==1);
+    assert(!present_ready(&cards[0]) && hwVisible && hardwareY==1);
     present_tick();assert(allocations==n+1);
     failAllocate=FALSE;assert(present_reserve(&screen));
     failWrite=TRUE;present_tick();pointer_tick();
-    assert(!present_ready() && hwVisible);
+    assert(!present_ready(&cards[0]) && hwVisible);
     failWrite=FALSE;present_tick();pointer_tick();
-    assert(present_ready() && !hwVisible);
+    assert(present_ready(&cards[0]) && !hwVisible);
     pointer_off();screenTop=0;on=TRUE;dragEnabled=FALSE;
     screenTop=1;present_tick();assert(!allocated && !pointer_software());
     forceSoftware=TRUE;assert(pointer_software());

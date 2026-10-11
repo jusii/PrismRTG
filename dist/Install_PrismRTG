@@ -246,10 +246,11 @@
             (
                 (if (and (exists smode) (not (exists sback)))
                     (run (cat "Copy >NIL: \"" smode "\" \"" sback "\" CLONE")))
-                (if (= wb 0) (run "C:PrismSetup >NIL: WBMODE=1"))
-                (if (= wb 1) (run "C:PrismSetup >NIL: WBMODE=2"))
-                (if (= wb 2) (run "C:PrismSetup >NIL: WBMODE=10"))
-                (if (= wb 3) (run "C:PrismSetup >NIL: WBMODE=11"))
+                ; by ModeID (depth slot, size slot): slot numbers move when sizes are added
+                (if (= wb 0) (run "C:PrismSetup >NIL: WBID=0001"))
+                (if (= wb 1) (run "C:PrismSetup >NIL: WBID=0002"))
+                (if (= wb 2) (run "C:PrismSetup >NIL: WBID=0102"))
+                (if (= wb 3) (run "C:PrismSetup >NIL: WBID=0103"))
             ))
     ))
 (complete 100)

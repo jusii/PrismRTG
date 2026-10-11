@@ -55,6 +55,8 @@ struct PrismPrefs {
     UBYTE softwarePointer;          /* override advertised hardware sprite */
     UBYTE dragging;                 /* opt in to software screen splits   */
     UBYTE clutBGR;                   /* PALETTE=BGR: load palettes blue first */
+    UBYTE second;                    /* SECONDBOARD=: on Auto, also drive a second
+                                        board if there is one (multi-board.md) */
     UBYTE on[PREFS_NMODES];          /* mode offered                       */
     UBYTE hz[PREFS_NMODES];          /* refresh wanted, 0 = default        */
     char p96card[256];

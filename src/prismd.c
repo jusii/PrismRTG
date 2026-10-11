@@ -173,6 +173,9 @@ struct ModeRec {
      * every MoveScreen: dragging a screen cost about 120 ms a step. */
     APTR  recLinks[4];        /* no links: nothing is chained to it      */
     ULONG id;
+    /* the rest of graphics' record header (tag, control, its get/set data
+     * functions): zero, in case graphics looks at those of a handle */
+    UBYTE recRest[32];
     struct PrismCard *card;   /* the board the mode is on                */
     struct PrismMode m;
     UBYTE maxDepth;           /* depth Intuition opens its screens with      */
@@ -219,18 +222,8 @@ struct CardState {
 };
 static struct CardState cst[MAX_CARDS];
 
-#define shown        (cst[0].shown)
-#define shownVP      (cst[0].shownVP)
-#define cardMode     (cst[0].curMode)
-#define shownPbm     (cst[0].shownPbm)
-#define showStamp    (cst[0].showStamp)
-#define rtgOn        (cst[0].rtgOn)
 #define palTab       (cst[0].palTab)
 #define palRGB       (cst[0].palRGB)
-#define testPbm      (cst[0].testPbm)
-#define testPen      (cst[0].testPen)
-#define testRgb      (cst[0].testRgb)
-#define testPal      (cst[0].testPal)
 
 static char *const monName[MAX_CARDS] = { "prism.monitor", "prism2.monitor" };
 
@@ -450,22 +443,28 @@ static struct PScreen *pscreens;
 
 BOOL pbm_is_shown(struct PBitMap *p)
 {
-    return p && p == shownPbm;
+    return p && p == cst[p->card->index].shownPbm;
+}
+
+UBYTE prism_ncards(void)
+{
+    return ncards;
 }
 
 /* Point the card at a bitmap, paging it into VRAM first. Lock held. */
 static BOOL show_pbm(struct PBitMap *p)
 {
-    present_stop();
-    shownPbm = NULL;                     /* the old one may be evicted now */
+    struct CardState *cs = &cst[p->card->index];
+    present_stop(p->card);
+    cs->shownPbm = NULL;                     /* the old one may be evicted now */
     if (!pbm_to_vram(p)) {
         dbg("show: %ux%u doesn't fit in VRAM\n", p->w, p->h);
         return FALSE;
     }
     if (!pbm_upload(p)) return FALSE;
     p->bd->setDisplayStart(p->bd, p->vramOff);
-    shownPbm = p;
-    p->lastShown = ++showStamp;
+    cs->shownPbm = p;
+    p->lastShown = ++cs->showStamp;
     return TRUE;
 }
 
@@ -473,15 +472,16 @@ static BOOL show_pbm(struct PBitMap *p)
  * instead if it was on display. Lock held. */
 void pbm_gone(struct PBitMap *p)
 {
+    struct CardState *cs = &cst[p->card->index];
     struct PScreen *ps;
     for (ps = pscreens; ps; ps = ps->next)
         if (ps->front == p)
             ps->front = NULL;
-    if (shownPbm == p) {
-        present_stop();
-        shownPbm = NULL;
-        if (shown && shown->pbm && shown->pbm != p)
-            show_pbm(shown->pbm);
+    if (cs->shownPbm == p) {
+        present_stop(p->card);
+        cs->shownPbm = NULL;
+        if (cs->shown && cs->shown->pbm && cs->shown->pbm != p)
+            show_pbm(cs->shown->pbm);
     }
 }
 
@@ -552,12 +552,16 @@ static void push_palette(struct ViewPort *vp)
     if (n > 256) n = 256;
     /* the DAC only matters to an 8-bit screen; deeper screens keep their
      * colours in their pen tables */
-    if (!shown || shown->mode->bpp == 1) {
-        ps_colours(ps_by_vp(vp), vp->ColorMap, n);
-        for (i = 0; i < n * 3; i++)
-            palRGB[i] = palTab[i] >> 24;
-        struct PrismBoard *B = shown ? shown->mode->card->b : cards[0].b;
-        B->setPalette(B, 0, n, palRGB);
+    {
+        struct PScreen *ps = ps_by_vp(vp);
+        struct PrismCard *c = ps ? ps->mode->card : &cards[0];
+        struct PScreen *on = cst[c->index].shown;
+        if (!on || on->mode->bpp == 1) {
+            ps_colours(ps, vp->ColorMap, n);
+            for (i = 0; i < n * 3; i++)
+                palRGB[i] = palTab[i] >> 24;
+            c->b->setPalette(c->b, 0, n, palRGB);
+        }
     }
     pointer_colours(vp);
 }
@@ -583,24 +587,27 @@ static struct PScreen *ps_by_vp(struct ViewPort *vp)
     return NULL;
 }
 
-struct PBitMap *prism_display_bitmap(void) { return shownPbm; }
+struct PBitMap *prism_display_bitmap(struct PrismCard *c) { return cst[c->index].shownPbm; }
 
 /* Intuition supplies the dragged front screen's origin. Different backing
  * formats are converted into the active display mode by the compositor. */
-struct Screen *prism_display_layers(struct PBitMap **front,struct PBitMap **back,
+struct Screen *prism_display_layers(struct PrismCard *c,struct PBitMap **front,struct PBitMap **back,
     WORD *top,WORD *backTop,UWORD *width,UWORD *height)
 {
+    struct CardState *cs = &cst[c->index];
     struct Screen *s;
-    *front=shownPbm;*back=NULL;*top=*backTop=0;
-    if (!shown || !shown->screen || !shownPbm || !cardMode || !rtgOn) return NULL;
-    *width=cardMode->m.width;*height=cardMode->m.height;
-    *top=shown->screen->TopEdge;
-    s=shown->screen->NextScreen;
+    *front=cs->shownPbm;*back=NULL;*top=*backTop=0;
+    if (!cs->shown || !cs->shown->screen || !cs->shownPbm || !cs->curMode || !cs->rtgOn) return NULL;
+    *width=cs->curMode->m.width;*height=cs->curMode->m.height;
+    *top=cs->shown->screen->TopEdge;
+    s=cs->shown->screen->NextScreen;
     if(s) {
+        /* another board's screen (shown on its own monitor) or a native one
+         * behind: nothing shows through, it stays black */
         struct PScreen *ps=ps_by_screen(s);
-        if(ps) { *back=ps->front ? ps->front : ps->pbm;*backTop=s->TopEdge; }
+        if(ps && ps->mode->card==c) { *back=ps->front ? ps->front : ps->pbm;*backTop=s->TopEdge; }
     }
-    return shown->screen;
+    return cs->shown->screen;
 }
 
 /* A screen's colours changed: rebuild its pen table (16-bit) and, if it
@@ -631,68 +638,116 @@ static void palette_update(struct ViewPort *vp)
         SW_CLEAR(ps->pbm, 0, 0, 32767, 32767);    /* the locks above leave the pointer */
         pbm_fill_pen(ps->pbm, 0);
     }
-    if (vp == shownVP)
+    if (vp == cst[ps->mode->card->index].shownVP)
         push_palette(vp);
 }
 
-/* Make the card follow the front screen. */
+static struct PrismCard *ptrOn;            /* the card the pointer was put on */
+/* What card k shows: the first screen, from the front, that is either on
+ * that card or native - a native screen in front of a board's screens
+ * means the Amiga's video on that monitor, as with one board. Lock held. */
+static struct PScreen *card_front(UBYTE k, struct Screen **sp)
+{
+    struct Screen *s;
+    for (s = IntuitionBase->FirstScreen; s; s = s->NextScreen) {
+        struct PScreen *ps = ps_by_screen(s);
+        if (!ps)
+            return NULL;
+        if (ps->mode->card->index == k) {
+            *sp = s;                     /* (ps->screen is still NULL while it opens) */
+            return ps;
+        }
+    }
+    return NULL;
+}
+
+/* Make card k show its front screen. TRUE if it now shows another screen
+ * than before (the pointer has to be set up again). Lock held. */
+static BOOL show_card(UBYTE k)
+{
+    struct CardState *cs = &cst[k];
+    struct PrismCard *c = &cards[k];
+    struct PrismBoard *B = c->b;
+    struct Screen *s = NULL;
+    struct PScreen *ps = card_front(k, &s);
+
+    if (ps) {
+        struct PBitMap *dp = ps->front ? ps->front : ps->pbm;
+        BOOL changed = FALSE;
+        if (cs->curMode != ps->mode) {
+            present_stop(c);
+            struct PrismMode m = ps->mode->m;
+            /* Rebuilding the pool releases the old scanout allocation. */
+            if ((B->flags & PBF_REINIT) && cs->rtgOn) {
+                B->setSwitch(B, FALSE);
+                cs->rtgOn = FALSE;
+            }
+            if (!pbm_prepare_mode(c) || !B->setMode(B, &m)) {
+                B->setSwitch(B, FALSE);
+                cs->rtgOn = FALSE;
+                cs->shown = NULL;
+                cs->shownPbm = NULL;
+                cs->shownVP = NULL;
+                cs->curMode = NULL;
+                return TRUE;
+            }
+            cs->curMode = ps->mode;
+            cs->shown = NULL;
+        }
+        if (cs->shown != ps || cs->shownPbm != dp)
+            show_pbm(dp);
+        if (cs->shown != ps) {
+            cs->shown = ps;
+            cs->shownVP = &s->ViewPort;
+            push_palette(cs->shownVP);
+            changed = TRUE;               /* a mode set turns the cursor off too */
+        }
+        if (!cs->rtgOn) {
+            B->setSwitch(B, TRUE);
+            cs->rtgOn = TRUE;
+        }
+        return changed;
+    }
+    present_stop(c);
+    if (cs->rtgOn) {
+        B->setSwitch(B, FALSE);
+        cs->rtgOn = FALSE;
+    }
+    /* program the mode again on the way back: WinUAE only re-enables
+     * its RTG view on a mode change, and it costs nothing on hardware */
+    cs->curMode = NULL;
+    cs->shown = NULL;
+    cs->shownVP = NULL;
+    cs->shownPbm = NULL;
+    return FALSE;
+}
+
+/* Make the boards follow the screens: each shows its own front screen,
+ * and the pointer is on the board of the screen in front of all. */
 static void update_display(void)
 {
     struct Screen *s = IntuitionBase->FirstScreen;
     struct PScreen *ps;
+    BOOL changed[MAX_CARDS] = { FALSE };
+    UBYTE k;
 
     LOCK();
     ps = ps_by_screen(s);
     dbg("LoadView: front %lx %s\n", (ULONG)s, ps ? "PRISM" : "native");
-    if (ps) {
+    for (k = 0; k < ncards; k++)
+        changed[k] = show_card(k);
+    dbg("display: front card %ld shown %lx ps %lx changed %ld/%ld pointer on card %ld\n",
+        ps ? (LONG)ps->mode->card->index : -1L, ps ? (ULONG)cst[ps->mode->card->index].shown : 0UL,
+        (ULONG)ps, (LONG)changed[0], (LONG)changed[1], ptrOn ? (LONG)ptrOn->index : -1L);
+    if (ps && cst[ps->mode->card->index].shown == ps) {
         struct PrismCard *c = ps->mode->card;
-        struct PrismBoard *B = c->b;
-        struct PBitMap *dp = ps->front ? ps->front : ps->pbm;
-        if (cardMode != ps->mode) {
-            present_stop();
-            struct PrismMode m = ps->mode->m;
-            /* Rebuilding the pool releases the old scanout allocation. */
-            if ((B->flags & PBF_REINIT) && rtgOn) {
-                B->setSwitch(B, FALSE);
-                rtgOn = FALSE;
-            }
-            if (!pbm_prepare_mode(c) || !B->setMode(B, &m)) {
-                pointer_off();
-                B->setSwitch(B, FALSE);
-                rtgOn = FALSE;
-                shown = NULL;
-                shownPbm = NULL;
-                shownVP = NULL;
-                cardMode = NULL;
-                ReleaseSemaphore(&lock);return;
-            }
-            cardMode = ps->mode;
-            shown = NULL;
-        }
-        if (shown != ps || shownPbm != dp)
-            show_pbm(dp);
-        if (shown != ps) {
-            shown = ps;
-            shownVP = &s->ViewPort;
-            push_palette(shownVP);
-            pointer_on(shownVP, c);       /* a mode set turns it off too */
-        }
-        if (!rtgOn) {
-            B->setSwitch(B, TRUE);
-            rtgOn = TRUE;
+        if (changed[c->index] || ptrOn != c) {
+            pointer_on(&s->ViewPort, c);
+            ptrOn = c;
         }
     } else {
         pointer_off();
-        if (rtgOn) {
-            board.setSwitch(&board, FALSE);
-            rtgOn = FALSE;
-        }
-        /* program the mode again on the way back: WinUAE only re-enables
-         * its RTG view on a mode change, and it costs nothing on hardware */
-        cardMode = NULL;
-        shown = NULL;
-        shownVP = NULL;
-        shownPbm = NULL;
+        ptrOn = NULL;
     }
     ReleaseSemaphore(&lock);
 }
@@ -1108,8 +1163,9 @@ static void palette_one(struct ViewPort *vp, ULONG n, ULONG r, ULONG g, ULONG b)
             paletteGen++;
             if (ps->mode->bpp == 2)
                 ps->penTab[n] = rgb16(ps->mode->m.format, c[0], c[1], c[2]);
-            if (vp == shownVP) {
-                if (!shown || shown->mode->bpp == 1)
+            struct CardState *cs = &cst[ps->mode->card->index];
+            if (vp == cs->shownVP) {
+                if (!cs->shown || cs->shown->mode->bpp == 1)
                     ps->mode->card->b->setPalette(ps->mode->card->b, n, 1, c);
                 if (n >= 16 && n < 32)           /* the pointer's colours live here */
                     pointer_colours(vp);
@@ -1297,6 +1353,7 @@ static void pending_end(struct Screen *s)
 
 static void free_ps(struct PScreen *ps)
 {
+    struct CardState *cs = &cst[ps->mode->card->index];
     LOCK();
     if (pscreens == ps) {
         pscreens = ps->next;
@@ -1305,11 +1362,11 @@ static void free_ps(struct PScreen *ps)
         for (p = pscreens; p && p->next != ps; p = p->next) ;
         if (p) p->next = ps->next;
     }
-    if (shown == ps) {
-        present_stop();
-        shown = NULL;
-        shownVP = NULL;
-        shownPbm = NULL;
+    if (cs->shown == ps) {
+        present_stop(ps->mode->card);
+        cs->shown = NULL;
+        cs->shownVP = NULL;
+        cs->shownPbm = NULL;
     }
     ReleaseSemaphore(&lock);
     if (!ps->intuitionOwns)
@@ -1513,7 +1570,7 @@ LONG h_ChangeVPBitMap(struct Regs *r)
     if (vp->RasInfo)
         vp->RasInfo->BitMap = bm;
     ps->front = (p == ps->pbm) ? NULL : p;
-    if (ps == shown && show_pbm(p) && p->bd->waitVBlank)
+    if (ps == cst[ps->mode->card->index].shown && show_pbm(p) && p->bd->waitVBlank)
         p->bd->waitVBlank(p->bd);
     ReleaseSemaphore(&lock);
     if (db) {
@@ -1532,7 +1589,7 @@ static BOOL screen_info(struct Screen *s, struct PrismScreenInfo *info)
     struct PScreen *ps;
     BOOL ok = FALSE;
 
-    LOCK_QUIET();
+    LOCK();                              /* it hands out the pixels: no sprite in them */
     if ((ps = ps_by_screen(s))) {
         info->vram = (ps->front ? ps->front : ps->pbm)->pix;
         info->bytesPerRow = ps->mode->m.bytesPerRow;
@@ -1700,8 +1757,11 @@ static void test_row(struct PBitMap *p, UBYTE *buf, int kind)
     }
 }
 
-static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const char *label)
+static LONG test_begin_on(UBYTE card, ULONG width, ULONG height, ULONG bits, ULONG hz,
+                          const char *label)
 {
+    struct CardState *cs;
+    struct PrismCard *c;
     struct PrismMode m;
     struct PBitMap *p;
     struct RastPort rp;
@@ -1709,40 +1769,46 @@ static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const ch
     UWORD y, i;
     int kind = -1;
 
-    if (testPbm)
+    if (card >= ncards)
+        return PRISM_TEST_NOMODE;
+    cs = &cst[card];
+    c = &cards[card];
+
+    if (cs->testPbm)
         return PRISM_TEST_BUSY;
-    for (nth = 0; (fmt = board_format(&board, bits, nth)) != PF_COUNT; nth++) {
+    for (nth = 0; (fmt = board_format(c->b, bits, nth)) != PF_COUNT; nth++) {
         memset(&m, 0, sizeof(m));
         m.width = width;
         m.height = height;
         m.format = fmt;
         m.refresh = hz;
-        if (board.checkMode(&board, &m))
+        if (c->b->checkMode(c->b, &m))
             break;
     }
     if (fmt == PF_COUNT)
         return PRISM_TEST_NOMODE;
 
-    testPen[0] = 0;
-    testPen[1] = rgb16(fmt, 255, 255, 255);
-    testRgb[0] = 0;
-    testRgb[1] = 0xffffff;
-    if (!(p = pbm_new(&cards[0], width, height, 8, fmt, testPen, TRUE, FALSE)))
+    cs->testPen[0] = 0;
+    cs->testPen[1] = rgb16(fmt, 255, 255, 255);
+    cs->testRgb[0] = 0;
+    cs->testRgb[1] = 0xffffff;
+    if (!(p = pbm_new(c, width, height, 8, fmt, cs->testPen, TRUE, FALSE)))
         return PRISM_TEST_NOMEM;
     p->fmt = fmt;
-    p->rgbTab = testRgb;
+    p->rgbTab = cs->testRgb;
     buf = AllocVec(p->bpr, MEMF_ANY | MEMF_CLEAR);
 
     LOCK();
+    present_stop(c);                     /* before what it composes can go */
     /* The screen on display may have to leave VRAM to make room (a 2 MB
      * card can't hold an 800x600 16-bit Workbench and a 1024x768 16-bit
      * test picture): let it be paged out like any other bitmap. It comes
      * back when test_end() shows the front screen again. */
-    shownPbm = NULL;
+    cs->shownPbm = NULL;
     if (!buf || p->bpr != m.bytesPerRow || !pbm_to_vram(p)) {
-        cardMode = NULL;
-        shown = NULL;
-        shownVP = NULL;
+        cs->curMode = NULL;
+        cs->shown = NULL;
+        cs->shownVP = NULL;
         ReleaseSemaphore(&lock);
         if (buf) FreeVec(buf);
         pbm_free(p);
@@ -1764,34 +1830,40 @@ static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const ch
     }
     FreeVec(buf);
 
-    pointer_off();
-    if (!board.setMode(&board, &m) || !pbm_upload(p)) {
+    /* the pointer, if it is on this board: the test picture has none (on
+     * the other board it stays where it is) */
+    dbg("test on card %ld, pointer on card %ld\n", (LONG)card, ptrOn ? (LONG)ptrOn->index : -1L);
+    if (ptrOn == c || ncards == 1) {
+        pointer_off();
+        ptrOn = NULL;
+    }
+    if (!c->b->setMode(c->b, &m) || !pbm_upload(p)) {
         p->locks--;
-        cardMode = NULL; shown = NULL; shownVP = NULL;
+        cs->curMode = NULL; cs->shown = NULL; cs->shownVP = NULL;
         ReleaseSemaphore(&lock);
         pbm_free(p); update_display();
         return PRISM_TEST_NOMODE;
     }
-    cardMode = NULL;                     /* the next real screen sets its own */
-    shown = NULL;
-    shownVP = NULL;
+    cs->curMode = NULL;                     /* the next real screen sets its own */
+    cs->shown = NULL;
+    cs->shownVP = NULL;
     p->bd->setDisplayStart(p->bd, p->vramOff);
-    shownPbm = p;
+    cs->shownPbm = p;
     if (fmt == PF_CLUT8) {
-        testPal[3] = testPal[4] = testPal[5] = 255;
+        cs->testPal[3] = cs->testPal[4] = cs->testPal[5] = 255;
         for (i = 0; i < 128; i++)
-            test_hue(i * 2, &testPal[(2 + i) * 3], &testPal[(2 + i) * 3 + 1],
-                     &testPal[(2 + i) * 3 + 2]);
+            test_hue(i * 2, &cs->testPal[(2 + i) * 3], &cs->testPal[(2 + i) * 3 + 1],
+                     &cs->testPal[(2 + i) * 3 + 2]);
         for (i = 0; i < 126; i++)
-            testPal[(130 + i) * 3] = testPal[(130 + i) * 3 + 1] = testPal[(130 + i) * 3 + 2] =
+            cs->testPal[(130 + i) * 3] = cs->testPal[(130 + i) * 3 + 1] = cs->testPal[(130 + i) * 3 + 2] =
                 i * 255 / 125;
-        board.setPalette(&board, 0, 256, testPal);
+        c->b->setPalette(c->b, 0, 256, cs->testPal);
     }
-    if (!rtgOn) {
-        board.setSwitch(&board, TRUE);
-        rtgOn = TRUE;
+    if (!cs->rtgOn) {
+        c->b->setSwitch(c->b, TRUE);
+        cs->rtgOn = TRUE;
     }
-    testPbm = p;
+    cs->testPbm = p;
     ReleaseSemaphore(&lock);
 
     if (label) {
@@ -1807,25 +1879,38 @@ static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const ch
     return PRISM_TEST_OK;
 }
 
+/* version 2's testBegin: the first board */
+static LONG test_begin(ULONG width, ULONG height, ULONG bits, ULONG hz, const char *label)
+{
+    return test_begin_on(0, width, height, bits, hz, label);
+}
+
 static void test_end(void)
 {
-    struct PBitMap *p;
+    struct PBitMap *p[MAX_CARDS] = { NULL };
+    BOOL any = FALSE;
+    UBYTE k;
 
     LOCK();
-    if ((p = testPbm)) {
-        testPbm = NULL;
-        p->locks--;
-        if (shownPbm == p)
-            shownPbm = NULL;
-        cardMode = NULL;
-        shown = NULL;
-        shownVP = NULL;
+    for (k = 0; k < ncards; k++) {
+        struct CardState *cs = &cst[k];
+        if ((p[k] = cs->testPbm)) {
+            cs->testPbm = NULL;
+            p[k]->locks--;
+            if (cs->shownPbm == p[k])
+                cs->shownPbm = NULL;
+            cs->curMode = NULL;
+            cs->shown = NULL;
+            cs->shownVP = NULL;
+            any = TRUE;
+        }
     }
     ReleaseSemaphore(&lock);
-    if (p) {
-        pbm_free(p);
-        update_display();                /* back to the front screen */
-    }
+    for (k = 0; k < ncards; k++)
+        if (p[k])
+            pbm_free(p[k]);
+    if (any)
+        update_display();                /* back to the front screens */
 }
 
 /* CoerceMode(vp a0, monitorID d0, flags d1) -> ModeID
@@ -1871,7 +1956,8 @@ static ULONG alert(APTR fn, ULONG num, UBYTE *str, ULONG height, ULONG time)
     register ULONG d1 __asm("d1") = height;
     register APTR a0 __asm("a0") = str;
     register APTR a1 __asm("a1") = (APTR)time;
-    BOOL was = rtgOn;
+    BOOL was[MAX_CARDS];
+    UBYTE k;
     BASE(IntuitionBase);
 
     if (prefs.log) {
@@ -1889,12 +1975,14 @@ static ULONG alert(APTR fn, ULONG num, UBYTE *str, ULONG height, ULONG time)
             }
         return 0;
     }
-    if (was)
-        board.setSwitch(&board, FALSE);
+    for (k = 0; k < ncards; k++)
+        if ((was[k] = cst[k].rtgOn))
+            cards[k].b->setSwitch(cards[k].b, FALSE);
     __asm volatile ("jsr (%[f])" : "+r"(d0), "+r"(d1), "+r"(a0), "+r"(a1)
                     : "r"(_a6), [f]"a"(fn) : "cc", "memory");
-    if (was)
-        board.setSwitch(&board, TRUE);
+    for (k = 0; k < ncards; k++)
+        if (was[k])
+            cards[k].b->setSwitch(cards[k].b, TRUE);
     return d0;
 }
 
@@ -1934,10 +2022,14 @@ static void P_Alert(ULONG num __asm("d7"))
             Wait(SIGF_SINGLE);
         }
     }
-    if (rtgOn) {
-        board.setSwitch(&board, FALSE);
-        rtgOn = FALSE;
-        cardMode = NULL;
+    {
+        UBYTE k;
+        for (k = 0; k < ncards; k++)
+            if (cst[k].rtgOn) {
+                cards[k].b->setSwitch(cards[k].b, FALSE);
+                cst[k].rtgOn = FALSE;
+                cst[k].curMode = NULL;
+            }
     }
     __asm volatile ("jsr (%[f])" : "+r"(d7) : "r"(a6), [f]"a"(o_Alert)
                     : "d0", "d1", "a0", "a1", "cc", "memory");
@@ -2180,6 +2272,16 @@ static BOOL uninstall(void)
     return TRUE;
 }
 
+/* The second board is not used after all (no mode, or its first mode
+ * failed): its monitor back to the Amiga's video, its driver stopped. */
+static void drop_second(void)
+{
+    if (board2.setSwitch)
+        board2.setSwitch(&board2, FALSE);
+    driver_close_slot(1);
+    ncards = 1;
+}
+
 /* ---- main ----------------------------------------------------------- */
 
 #define TEMPLATE "BOARD/K,PREFS/K,LOG/S,P96CARD/K,P96MONITOR/K"
@@ -2274,8 +2376,12 @@ int main(void)
             /* Auto drives a second board too, if the other supplied
              * driver finds one (multi-board.md): its screens get their
              * own monitor, PRISM2:. The first board is as before. */
-            if(found && second && driver_open(&board2,second,&config))
-                ncards=2;
+            if(found && second && prefs.second) {
+                driverQuiet=TRUE;            /* no board there is the usual case */
+                if(driver_open(&board2,second,&config))
+                    ncards=2;
+                driverQuiet=FALSE;
+            }
         }
     }
     if (!found) {
@@ -2295,7 +2401,7 @@ int main(void)
     }
     if (ncards > 1 && !cst[1].nmodes) {
         printf("PrismD: %s offers no usable modes; only %s is used\n", board2.name, board.name);
-        ncards = 1;
+        drop_second();
     }
 
     InitSemaphore(&lock);
@@ -2310,7 +2416,7 @@ int main(void)
         if (!B->setMode(B, &m)) {
             if (!k) { puts("PrismD: initial mode failed");goto out; }
             printf("PrismD: %s: initial mode failed; only %s is used\n", B->name, board.name);
-            ncards = 1;
+            drop_second();
             break;
         }
         if (prefs.blitter && B->modeReady) B->modeReady(B);
@@ -2374,6 +2480,20 @@ int main(void)
     sem.drawLock = &lock;
     sem.logLevel = &prefs.log;
     sem.boardFlags = &board.flags;
+    sem.numBoards = ncards;
+    if (ncards > 1) {
+        sem.board2Name = board2.name;
+        sem.board2Flags = &board2.flags;
+        sem.board2HwOps = (board2.fillRect || BOARD_CAN(&board2, fill) ? PRISM_HW_FILL : 0) |
+                          (board2.copyRect || BOARD_CAN(&board2, copy) ? PRISM_HW_COPY : 0) |
+                          (board2.copyBetween ? PRISM_HW_BETWEEN : 0) |
+                          (board2.expandRect || BOARD_CAN(&board2, expand) ? PRISM_HW_TEXT : 0) |
+                          (board2.drawLine || BOARD_CAN(&board2, line) ? PRISM_HW_LINE : 0) |
+                          (BOARD_CAN(&board2, planar) ? PRISM_HW_PLANAR : 0);
+    }
+    sem.vramKB[0] = board.vramSize >> 10;
+    sem.vramKB[1] = ncards > 1 ? board2.vramSize >> 10 : 0;
+    sem.testBeginOn = test_begin_on;
     sem.hwOps = (board.fillRect || BOARD_CAN(&board, fill) ? PRISM_HW_FILL : 0) |
                 (board.copyRect || BOARD_CAN(&board, copy) ? PRISM_HW_COPY : 0) |
                 (board.copyBetween ? PRISM_HW_BETWEEN : 0) |
@@ -2468,13 +2588,15 @@ int main(void)
         printf("PrismD: another program patched the same functions - can't quit\n");
         AddSemaphore(&sem.ss);
     }
-    if (rtgOn)
-        board.setSwitch(&board, FALSE);
+    for (k = 0; k < ncards; k++)
+        if (cst[k].rtgOn)
+            cards[k].b->setSwitch(cards[k].b, FALSE);
     printf("PrismD: stopped\n");
     rc = 0;
 
 out:
-    present_stop();
+    for (k = 0; k < ncards; k++)
+        present_stop(&cards[k]);
     driver_close();
     if (ExpansionBase) CloseLibrary((struct Library *)ExpansionBase);
     if (UtilityBase) CloseLibrary(UtilityBase);

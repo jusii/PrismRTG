@@ -165,6 +165,15 @@ switched on.
   itself.
 * Boot failsafe: hold the left mouse button while booting and PrismRTG does
   not start; a start that hangs is skipped automatically on the next boot.
+* **Two boards at once** (1.1 beta 6, emulator-tested so far): with a ZZ9000
+  and a GBAPII++ (or Picasso II) in one machine, each on its own monitor,
+  PrismRTG drives both. The first board's modes are `PRISM:...` as before,
+  the second's `PRISM2:...` (ModeIDs `$7A01xxxx`); a program or ScreenMode
+  picks the board by picking a mode. Each board shows its own front screen,
+  the pointer is on the board of the screen in front, and dragging works on
+  both. Board `Auto, 1 board` in PrismPrefs (`SECONDBOARD=OFF`) keeps to one
+  board; with two, the Test button asks which board shows the test picture.
+  Design: `docs/multi-board.md`.
 
 Neither card lets software read what the monitor supports (the ZZ9000
 firmware has no DDC code; the GBAPII++ does not wire the chip's DDC data
@@ -365,7 +374,7 @@ finished `.info` files in `dist/`.
 | `PrismD` | The driver. `PrismD [BOARD=ZZ9000|PICASSO2|P96|UAEGFX|<name>] [P96CARD=file] [P96MONITOR=icon] [PREFS=file] [LOG]`; Ctrl-C removes its patches when no PrismRTG screen is open and no program holds a PrismRTG bitmap. P96 and UAEGFX contexts remain resident until reboot. |
 | `PrismPrefs` | Settings editor. `FROM= USE SAVE TEST=<slot>` work without the window. |
 | `Prism` (`out/PrismMon`) | `DEVS:Monitors` launcher with the boot failsafe. |
-| `PrismSetup` | Installer helper: `DETECT`, `WBMODE=<slot>`. |
+| `PrismSetup` | Installer helper: `DETECT`, `WBID=<id>` (Workbench mode by ModeID, e.g. `0102` = 800x600 16-bit; `WBMODE=<slot>` still works). |
 | `PrismProbe` | Lists expansion boards and marks the ones PrismRTG can drive. Read-only. |
 | `PrismBench` | Benchmark and pixel-exactness checks: `MODEID=$7A00xxxx`, `LIST`. |
 | `PrismTest` | A driver on its own, without PrismD: loads `BOARD=NAME` (any `.driver`), sets a mode, draws a pattern, checks the driver's fills and copies against the CPU (`BLIT`). |

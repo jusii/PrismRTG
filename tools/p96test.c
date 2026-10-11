@@ -18,6 +18,8 @@
 #include <graphics/rastport.h>
 #include <intuition/screens.h>
 #include <utility/tagitem.h>
+#include <exec/semaphores.h>
+#include "prism.h"
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/graphics.h>
@@ -211,8 +213,23 @@ int main(void)
         struct TagItem t2[] = { { P96BD_BoardName, (ULONG)&bname }, { P96BD_TotalMemory, (ULONG)&total },
                                 { P96BD_FreeMemory, (ULONG)&freeMem }, { P96BD_RGBFormats, (ULONG)&formats },
                                 { TAG_DONE, 0 } };
+        struct PrismSem *ps;
+        ULONG want = 1;
         tagcall(t1, 0, 180);
-        check("p96GetRTGDataTagList: one board", boards == 1);
+        /* as many boards as PrismD drives (version 5 knows a second one) */
+        Forbid();
+        if ((ps = (struct PrismSem *)FindSemaphore((STRPTR)PRISM_SEMNAME)) && ps->version >= 5)
+            want = ps->numBoards;
+        Permit();
+        check("p96GetRTGDataTagList: as many boards as PrismD drives", boards == want);
+        if (boards > 1) {
+            char *b2 = NULL;
+            ULONG total2 = 0;
+            struct TagItem t3[] = { { P96BD_BoardName, (ULONG)&b2 }, { P96BD_TotalMemory, (ULONG)&total2 },
+                                    { TAG_DONE, 0 } };
+            n = tagcall(t3, 1, 186);
+            printf("    second board '%s', %lu KB\n", b2 ? b2 : "?", (unsigned long)(total2 >> 10));
+        }
         n = tagcall(t2, 0, 186);
         printf("    board '%s', %lu KB, %lu KB free, formats %04lx\n", bname ? bname : "?",
                (unsigned long)(total >> 10), (unsigned long)(freeMem >> 10), (unsigned long)formats);

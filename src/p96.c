@@ -412,9 +412,9 @@ static ULONG P_GetModeIDAttr(ULONG id __asm("d0"), ULONG attr __asm("d1"))
         case P96IDA_BYTESPERPIXEL:  r = mi.bpp; break;
         case P96IDA_RGBFORMAT:      r = pf2rgbf(mi.fmt); break;
         case P96IDA_ISP96:          r = TRUE; break;
-        case P96IDA_BOARDNUMBER:    r = 0; break;
+        case P96IDA_BOARDNUMBER:    r = PRISM_ID_CARD(id); break;
         case P96IDA_STDBYTESPERROW: r = ((ULONG)mi.w * mi.bpp + 7) & ~7UL; break;
-        case P96IDA_BOARDNAME:      r = (ULONG)board.name; break;
+        case P96IDA_BOARDNAME:      r = (ULONG)cards[PRISM_ID_CARD(id)].b->name; break;
         case P96IDA_COMPATIBLEFORMATS: r = RGBFF(pf2rgbf(mi.fmt)); break;
         }
     }
@@ -1003,7 +1003,7 @@ static LONG P_GetRTGDataTagList(struct TagItem *tags __asm("a0"))
     LONG n = 0;
     while ((ti = NextTagItem(&tl)))
         if (ti->ti_Tag == P96RD_NumberOfBoards && ti->ti_Data) {
-            *(ULONG *)ti->ti_Data = 1;
+            *(ULONG *)ti->ti_Data = prism_ncards();
             n++;
         }
     return n;
@@ -1015,13 +1015,15 @@ static LONG P_GetBoardDataTagList(ULONG boardNo __asm("d0"), struct TagItem *tag
     ULONG freeBytes, largest, i, formats = 0;
     LONG n = 0;
 
-    if (boardNo != 0)
+    struct PrismCard *c;
+    if (boardNo >= prism_ncards())
         return 0;
+    c = &cards[boardNo];
     LOCK_QUIET();
-    freeBytes = vram_free_bytes(&cards[0], &largest);
+    freeBytes = vram_free_bytes(c, &largest);
     ReleaseSemaphore(&lock);
     for (i = 1; i < RGBFB_MaxFormats; i++)
-        if (rgbf2pf[i] != PF_COUNT && (board.formats & PF_BIT(rgbf2pf[i])))
+        if (rgbf2pf[i] != PF_COUNT && (c->b->formats & PF_BIT(rgbf2pf[i])))
             formats |= RGBFF(i);
     while ((ti = NextTagItem(&tl))) {
         ULONG *v = (ULONG *)ti->ti_Data;
@@ -1030,8 +1032,8 @@ static LONG P_GetBoardDataTagList(ULONG boardNo __asm("d0"), struct TagItem *tag
         n++;
         switch (ti->ti_Tag) {
         case P96BD_BoardName:
-        case P96BD_ChipName:          *v = (ULONG)board.name; break;
-        case P96BD_TotalMemory:       *v = board.vramSize; break;
+        case P96BD_ChipName:          *v = (ULONG)c->b->name; break;
+        case P96BD_TotalMemory:       *v = c->b->vramSize; break;
         case P96BD_FreeMemory:        *v = freeBytes; break;
         case P96BD_LargestFreeMemory: *v = largest; break;
         case P96BD_MonitorSwitch:     *v = TRUE; break;

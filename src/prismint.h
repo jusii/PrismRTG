@@ -328,14 +328,16 @@ void pointer_colours(struct ViewPort *vp);   /* lock held                 */
 BOOL pointer_software(void);
 void pointer_compose(struct PBitMap *, WORD);
 void present_tick(void);
-BOOL present_ready(void);
+BOOL present_ready(struct PrismCard *c);
 BOOL prism_dragging(void);
 BOOL prism_software_pointer(void);
-void present_stop(void);
+void present_stop(struct PrismCard *c);
+void present_invalidate(struct PrismCard *c);   /* compose card c's frame afresh */
 struct Screen;
 BOOL present_reserve(struct Screen *);
-struct PBitMap *prism_display_bitmap(void);
-struct Screen *prism_display_layers(struct PBitMap **,struct PBitMap **,WORD *,WORD *,UWORD *,UWORD *);
+struct PBitMap *prism_display_bitmap(struct PrismCard *c);   /* what card c shows */
+UBYTE prism_ncards(void);                    /* boards PrismD drives (1 or 2) */
+struct Screen *prism_display_layers(struct PrismCard *,struct PBitMap **,struct PBitMap **,WORD *,WORD *,UWORD *,UWORD *);
 BOOL p96_pip_active(struct Screen *);
 void p96_pip_compose(struct PBitMap *,struct Screen *,WORD);
 /* the frame rows (screenTop added) any PIP of the screen covers; FALSE = none */
@@ -344,7 +346,7 @@ BOOL p96_pip_rows(struct Screen *,WORD screenTop,WORD *y0,WORD *y1);
 BOOL p96_pip_volatile(struct Screen *);
 extern ULONG pipGen;                    /* bumped when a PIP opens, closes or changes */
 /* the frame rows pointer_compose would draw on; FALSE = it draws nothing */
-BOOL pointer_compose_rows(WORD top,WORD *y0,WORD *y1);
+BOOL pointer_compose_rows(struct PrismCard *c,WORD top,WORD *y0,WORD *y1);
 extern volatile WORD posX, posY;        /* the pointer's position (pointer.c) */
 void pointer_tick(void);                     /* PrismD main loop          */
 

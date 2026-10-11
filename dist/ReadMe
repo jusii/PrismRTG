@@ -89,6 +89,15 @@ New in 1.1 beta (experimental - please report how it goes)
                   working on an Apollo Vampire with vampiregfx.card.
   Details: docs/uaegfx.md and docs/p96-drivers.md on GitHub.
 
+Two boards (new in 1.1 beta 6 - tested in an emulator so far)
+  With two boards in one machine - a ZZ9000 and a GBAPII++ or Picasso II -
+  each on its own monitor, PrismRTG drives both. The first board's modes
+  are PRISM:..., the second's PRISM2:...; pick a board by picking a mode
+  (ScreenMode, a program's mode requester). Each board shows its own front
+  screen, and the pointer is on the board of the screen in front.
+  Board "Auto, 1 board" in PrismPrefs (SECONDBOARD=OFF) keeps to one board;
+  with two, the Test button asks which board shows the test picture.
+
 Software pointer
   Boards without a working hardware pointer get a pointer drawn into the
   screen; Soft pointer in PrismPrefs (SOFTWAREPOINTER=ON in the prefs

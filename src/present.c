@@ -32,34 +32,93 @@
 #include "composite.h"
 #include "damage.h"
 
-static struct PBitMap frame;
-static UBYTE *previous;
-static BOOL allocated, valid, owned;
-static struct PBitMap *input;
-static struct PBitMap *failedInput;
-static UWORD failedWidth,failedHeight,retryTicks;
-
 /* per row: how it was made, this tick and the last uploaded one */
 #define ROW_CPU   0              /* composed in frame.pix, uploaded by changed span */
 #define ROW_HW    1              /* the front's band, copied by the blitter          */
 #define ROW_HWCPU 2              /* in the band, but with a PIP or the pointer on it:
                                     read back, composed, written in full            */
-static UBYTE *rowMode, *prevMode, *rowDirty;
-
-/* what the last composed frame was made from */
-static ULONG seenFrontMod, seenBackMod, seenPal, seenPip;
-static WORD seenTop, seenBackTop, seenPX, seenPY, seenOv0, seenOv1, seenBand0, seenBand1;
-static const void *seenScreen, *seenFront, *seenBack;
-static BOOL seenHwBand;
-static UWORD idleTicks;
 #define SAFETY_TICKS 25          /* a full frame every half second regardless */
 
-BOOL present_ready(void) { return allocated && valid; }
+/* One compositor per card: each board composes its own front screen
+ * (multi-board.md). Everything below works on P, the card's, set by the
+ * entry points (all under the lock). */
+static struct Pres {
+    struct PBitMap x_frame;
+    UBYTE *x_previous;
+    BOOL x_allocated, x_valid, x_owned;
+    struct PBitMap *x_input;
+    struct PBitMap *x_failedInput;
+    UWORD x_failedWidth, x_failedHeight, x_retryTicks;
+    UBYTE *x_rowMode, *x_prevMode, *x_rowDirty;
+    /* what the last composed frame was made from */
+    ULONG x_seenFrontMod, x_seenBackMod, x_seenPal, x_seenPip;
+    WORD x_seenTop, x_seenBackTop, x_seenPX, x_seenPY, x_seenOv0, x_seenOv1, x_seenBand0, x_seenBand1;
+    WORD x_seenAny0, x_seenAny1;           /* rows the pointer or a PIP covered */
+    const void *x_seenScreen, *x_seenFront, *x_seenBack;
+    BOOL x_seenHwBand;
+    UWORD x_idleTicks;
+    /* the screen behind's pens in the frame's palette (8-bit), per card:
+     * two boards would otherwise rebuild it for each other every tick */
+    UBYTE backMap[256];
+    ULONG mapPal;
+    const struct PBitMap *mapFor;
+} pres[MAX_CARDS], *P = &pres[0];
+static struct PrismCard *PC = &cards[0];
+#define frame        (P->x_frame)
+#define previous     (P->x_previous)
+#define allocated    (P->x_allocated)
+#define valid        (P->x_valid)
+#define owned        (P->x_owned)
+#define input        (P->x_input)
+#define failedInput  (P->x_failedInput)
+#define failedWidth  (P->x_failedWidth)
+#define failedHeight (P->x_failedHeight)
+#define retryTicks   (P->x_retryTicks)
+#define rowMode      (P->x_rowMode)
+#define prevMode     (P->x_prevMode)
+#define rowDirty     (P->x_rowDirty)
+#define seenFrontMod (P->x_seenFrontMod)
+#define seenBackMod  (P->x_seenBackMod)
+#define seenPal      (P->x_seenPal)
+#define seenPip      (P->x_seenPip)
+#define seenTop      (P->x_seenTop)
+#define seenBackTop  (P->x_seenBackTop)
+#define seenPX       (P->x_seenPX)
+#define seenPY       (P->x_seenPY)
+#define seenOv0      (P->x_seenOv0)
+#define seenOv1      (P->x_seenOv1)
+#define seenBand0    (P->x_seenBand0)
+#define seenBand1    (P->x_seenBand1)
+#define seenAny0     (P->x_seenAny0)
+#define seenAny1     (P->x_seenAny1)
+#define seenScreen   (P->x_seenScreen)
+#define seenFront    (P->x_seenFront)
+#define seenBack     (P->x_seenBack)
+#define seenHwBand   (P->x_seenHwBand)
+#define idleTicks    (P->x_idleTicks)
+
+static void on_card(struct PrismCard *c)
+{
+    PC = c;
+    P = &pres[c->index];
+}
+
+void present_invalidate(struct PrismCard *c)
+{
+    pres[c->index].x_valid = FALSE;
+}
+
+BOOL present_ready(struct PrismCard *c)
+{
+    return pres[c->index].x_allocated && pres[c->index].x_valid;
+}
 
 /* Caller holds the board lock. Switch away before releasing scanout VRAM. */
-void present_stop(void)
+void present_stop(struct PrismCard *c)
 {
-    struct PBitMap *front=prism_display_bitmap();
+    struct PBitMap *front;
+    on_card(c);
+    front=prism_display_bitmap(c);
     retryTicks=0;failedInput=NULL;
     if (!allocated) return;
     if (front && front->inVram) frame.bd->setDisplayStart(frame.bd,front->vramOff);
@@ -79,7 +138,7 @@ static BOOL prepare(struct PBitMap *front,UWORD width,UWORD height)
     if (allocated && frame.w==width && frame.h==height && frame.fmt==front->fmt && input==front) return TRUE;
     if (front==failedInput && width==failedWidth && height==failedHeight &&
         retryTicks) { retryTicks--;return FALSE; }
-    present_stop();
+    present_stop(PC);
     pitch=front->bd->ops && front->bd->ops->pitch ? front->bd->ops->pitch(front->bd,width,height,front->fmt) :
         front->bd->bytesPerRow ? front->bd->bytesPerRow(front->bd,width,height,front->bpp) :
         (((ULONG)width*front->bpp+7)&~7UL);
@@ -124,9 +183,14 @@ fail:
 BOOL present_reserve(struct Screen *screen)
 {
     struct PBitMap *front,*back;WORD top,backTop;UWORD width,height;
-    if (screen!=prism_display_layers(&front,&back,&top,&backTop,&width,&height)) return TRUE;
-    retryTicks=0; /* An explicit new PIP request may retry immediately. */
-    return prepare(front,width,height);
+    UBYTE k;
+    for (k = 0; k < prism_ncards(); k++)
+        if (screen==prism_display_layers(&cards[k],&front,&back,&top,&backTop,&width,&height)) {
+            on_card(&cards[k]);
+            retryTicks=0; /* An explicit new PIP request may retry immediately. */
+            return prepare(front,width,height);
+        }
+    return TRUE;
 }
 
 /* A bitmap whose pixels a program can change without PrismD seeing a
@@ -154,25 +218,23 @@ static void band_blit(const struct PBitMap *front,WORD y0,WORD y1,WORD top)
 
 static inline WORD clampw(LONG v,WORD lo,WORD hi) { return v<lo ? lo : v>hi ? hi : (WORD)v; }
 
-void present_tick(void)
+static void present_card(void)
 {
     struct PBitMap *front,*back;
     struct Screen *screen;
     struct PrismSurface surface;
     UWORD width,height,y; WORD top,backTop;
     BOOL showBack,hwBand,full,moved,frontChanged,backChanged,ptrChanged;
-    static UBYTE backMap[256];
-    static ULONG mapPal; static const struct PBitMap *mapFor;
     const UBYTE *map=NULL;
-    WORD bandY0=0,bandY1=0,ovY0=0,ovY1=0,pipY0,pipY1,ptrY0,ptrY1;
+    WORD bandY0=0,bandY1=0,ovY0=0,ovY1=0,anyY0=0,anyY1=0,pipY0,pipY1,ptrY0,ptrY1;
     ULONG wrow;
     ObtainSemaphore(&lock);
-    screen=prism_display_layers(&front,&back,&top,&backTop,&width,&height);
+    screen=prism_display_layers(PC,&front,&back,&top,&backTop,&width,&height);
     if (!prism_dragging()) top=0;
     /* The pointer alone is a software sprite (pointer.c), not a reason
      * to compose; while composing, pointer_compose draws it. */
     if (!screen || (!top && !p96_pip_active(screen))) {
-        present_stop(); ReleaseSemaphore(&lock); return;
+        present_stop(PC); ReleaseSemaphore(&lock); return;
     }
     if (!prepare(front,width,height)) { ReleaseSemaphore(&lock);return; }
 
@@ -194,16 +256,16 @@ void present_tick(void)
         front->fmt==frame.fmt && frame.bd->copyBetween &&
         !(frame.bd->flags & (PBF_SHADOW|PBF_SOFTWARE|PBF_ACCEL_BROKEN|PBF_PRESENT)) &&
         hw_fits(frame.bd,(UWORD)(width*frame.bpp),1,front->bpr>frame.bpr ? front->bpr : frame.bpr);
-    /* rows in the band that carry something on top of the front: read
-     * back from the front and composed by the CPU */
-    if (hwBand) {
-        if (p96_pip_rows(screen,top,&pipY0,&pipY1)) { ovY0=pipY0;ovY1=pipY1; }
-        if (pointer_compose_rows(top,&ptrY0,&ptrY1)) {
-            if (ovY1<=ovY0) { ovY0=ptrY0;ovY1=ptrY1; }
-            else { if (ptrY0<ovY0) ovY0=ptrY0; if (ptrY1>ovY1) ovY1=ptrY1; }
-        }
-        ovY0=clampw(ovY0,bandY0,bandY1);ovY1=clampw(ovY1,bandY0,bandY1);
+    /* rows anything is drawn on top of: the pointer and PIPs (anywhere in
+     * the frame - over the screen behind too); of those, the rows in the
+     * band are read back from the front and composed by the CPU */
+    if (p96_pip_rows(screen,top,&pipY0,&pipY1)) { anyY0=pipY0;anyY1=pipY1; }
+    if (pointer_compose_rows(PC,top,&ptrY0,&ptrY1)) {
+        if (anyY1<=anyY0) { anyY0=ptrY0;anyY1=ptrY1; }
+        else { if (ptrY0<anyY0) anyY0=ptrY0; if (ptrY1>anyY1) anyY1=ptrY1; }
     }
+    anyY0=clampw(anyY0,0,height);anyY1=clampw(anyY1,0,height);
+    if (hwBand) { ovY0=clampw(anyY0,bandY0,bandY1);ovY1=clampw(anyY1,bandY0,bandY1); }
 
     /* what changed since the last frame? */
     full = !valid || screen!=seenScreen || front!=seenFront || back!=seenBack ||
@@ -216,17 +278,18 @@ void present_tick(void)
         p96_pip_volatile(screen);
     backChanged = full || (back && (back->modified!=seenBackMod || volatile_bitmap(back))) ||
         (back && screen->NextScreen && p96_pip_volatile(screen->NextScreen));
-    ptrChanged = full || posX!=seenPX || posY!=seenPY || ovY0!=seenOv0 || ovY1!=seenOv1;
+    ptrChanged = full || posX!=seenPX || posY!=seenPY || ovY0!=seenOv0 || ovY1!=seenOv1 ||
+        anyY0!=seenAny0 || anyY1!=seenAny1;
     if (!frontChanged && !backChanged && !ptrChanged) { ReleaseSemaphore(&lock); return; }
     if (full) idleTicks=0;
 
     if(showBack && back->fmt==PF_CLUT8 && frame.fmt==PF_CLUT8 &&
        back->rgbTab!=frame.rgbTab) {
         /* 65,536 nearest-pen searches: once per palette, not per tick */
-        if (mapFor!=back || mapPal!=paletteGen) {
-            composite_clut_map(&frame,back,backMap);mapFor=back;mapPal=paletteGen;
+        if (P->mapFor!=back || P->mapPal!=paletteGen) {
+            composite_clut_map(&frame,back,P->backMap);P->mapFor=back;P->mapPal=paletteGen;
         }
-        map=backMap;
+        map=P->backMap;
     }
     if (frame.bd->waitBlit) frame.bd->waitBlit(frame.bd);
 
@@ -252,7 +315,9 @@ void present_tick(void)
         }
         rowMode[y]=ROW_CPU;
         if (inBand) {
-            redo = frontChanged || ptrChanged;
+            /* the pointer moving redoes only the rows it was or is on */
+            redo = frontChanged ||
+                (ptrChanged && ((y>=anyY0 && y<anyY1) || (y>=seenAny0 && y<seenAny1)));
             if (!redo) continue;
             rowDirty[y]=TRUE;
             if (wrow<frame.bpr) memset(row+wrow,0,frame.bpr-wrow);
@@ -260,14 +325,16 @@ void present_tick(void)
             continue;
         }
         redo = backChanged || (moved && y>=seenBand0 && y<seenBand1) ||
-            (ptrChanged && ((y>=ovY0 && y<ovY1) || (y>=seenOv0 && y<seenOv1)));
+            (ptrChanged && ((y>=anyY0 && y<anyY1) || (y>=seenAny0 && y<seenAny1)));
         if (!redo) continue;
         rowDirty[y]=TRUE;
         memset(row,0,frame.bpr);
         if (showBack && by>=0 && by<back->h)
             composite_row_mapped(&frame,y,back,by,map);
     }
-    if(showBack && screen->NextScreen && backChanged)
+    /* after a drag step too: the rows it uncovered were redone from the
+     * screen behind's bitmap */
+    if(showBack && screen->NextScreen && (backChanged || moved))
         p96_pip_compose(&frame,screen->NextScreen,backTop);
     if (hwBand) {
         if (frontChanged) band_blit(front,bandY0,bandY1,top);
@@ -298,7 +365,22 @@ void present_tick(void)
         seenPX=posX;seenPY=posY;seenPal=paletteGen;seenPip=pipGen;seenHwBand=hwBand;
         seenOv0=ovY0;seenOv1=ovY1;seenFrontMod=front->modified;
         seenBand0=bandY0;seenBand1=bandY1;
+        seenAny0=anyY0;seenAny1=anyY1;
         seenBackMod=back ? back->modified : 0;
     } else valid=FALSE;                  /* a failed write: compose the whole next tick */
+    ReleaseSemaphore(&lock);
+}
+
+/* PrismD's tick: every board composes its own front screen. */
+void present_tick(void)
+{
+    UBYTE k;
+    /* the lock across the cards: P must not change between on_card and
+     * present_card (present_card takes the lock again, which is allowed) */
+    ObtainSemaphore(&lock);
+    for (k = 0; k < prism_ncards(); k++) {
+        on_card(&cards[k]);
+        present_card();
+    }
     ReleaseSemaphore(&lock);
 }

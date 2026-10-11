@@ -14,7 +14,7 @@
 #include <intuition/screens.h>
 
 #define PRISM_SEMNAME     "prism"
-#define PRISM_VERSION     4
+#define PRISM_VERSION     5
 
 /* Boot failsafe: DEVS:Monitors/Prism creates this before starting PrismD
  * and PrismD deletes it after a minute. Found at boot, it means the last
@@ -71,6 +71,18 @@ struct PrismSem {
      * calls its driver does in hardware (PRISM_HW_*) */
     const ULONG *boardFlags;
     ULONG hwOps;
+    /* version 5: a second board (multi-board.md). numBoards is 1 or 2;
+     * the second board's modes are PRISM_CARD_ID(1) | ..., on the monitor
+     * "prism2.monitor", and numModes counts both boards' modes. vramKB is
+     * each board's video memory. testBeginOn is testBegin on board 0 or
+     * 1; testEnd ends whichever is showing. */
+    UBYTE numBoards;
+    const char *board2Name;
+    const ULONG *board2Flags;
+    ULONG board2HwOps;
+    ULONG vramKB[2];
+    LONG  (*testBeginOn)(UBYTE board, ULONG width, ULONG height, ULONG bits, ULONG hz,
+                         const char *label);
 };
 #define PRISM_HW_FILL     (1UL << 0)
 #define PRISM_HW_COPY     (1UL << 1)    /* within one bitmap            */

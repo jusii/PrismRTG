@@ -38,6 +38,7 @@ void prefs_default(struct PrismPrefs *p)
     memset(p, 0, sizeof(*p));
     p->board = PB_AUTO;
     p->blitter = 1;
+    p->second = 1;
     p->log = 0;
     memset(p->on, 1, sizeof(p->on));
 }
@@ -113,6 +114,8 @@ BOOL prefs_load(struct PrismPrefs *p, const char *path)
             p->softwarePointer = onoff(v);
         } else if (same(line, "DRAGGING")) {
             p->dragging = onoff(v);
+        } else if (same(line, "SECONDBOARD")) {
+            p->second = onoff(v);
         } else if (same(line, "BLITTER")) {
             p->blitter = onoff(v);
         } else if (same(line, "LOG")) {
@@ -141,6 +144,7 @@ BOOL prefs_save(const struct PrismPrefs *p, const char *path)
     if (p->p96monitor[0]) fprintf(f, "P96MONITOR=%s\n", p->p96monitor);
     fprintf(f, "SOFTWAREPOINTER=%s\n", p->softwarePointer ? "ON" : "OFF");
     fprintf(f, "DRAGGING=%s\n", p->dragging ? "ON" : "OFF");
+    fprintf(f, "SECONDBOARD=%s\n", p->second ? "ON" : "OFF");
     fprintf(f, "BLITTER=%s\n", p->blitter ? "ON" : "OFF");
     fprintf(f, "LOG=%s\n", p->log == 2 ? "SYNC" : p->log ? "ON" : "OFF");
     if (p->clutBGR)

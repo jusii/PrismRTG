@@ -2,8 +2,13 @@
 
 Goal: PrismRTG driving two graphics boards in one Amiga at the same time - each with its own
 screens on its own monitor (step 1) - and later one screen stretched across both monitors
-(step 2). Today PrismD drives one board: with a ZZ9000 and a GBAPII++ fitted it takes the first
-its drivers find and leaves the other alone.
+(step 2). Until 1.1 beta 6 PrismD drove one board: with a ZZ9000 and a GBAPII++ fitted it took
+the first its drivers found and left the other alone.
+
+**State (October 2026):** steps 1-5 below are done and pass in WinUAE-Prism's `dual-060.uae`
+(every drawing check on both boards, each board showing its own front screen, the pointer
+following the front screen, dragging on either board); not yet tried on real hardware with
+two cards in one machine.
 
 Developed and tested on the emulated boards in WinUAE-Prism (`dual-060.uae`: a 68060 with a
 ZZ9000 and a GBAPII++ on a second monitor), then on real hardware.

@@ -19,6 +19,23 @@ static const char version[] __attribute__((used)) = "$VER: prismstate 1.1 (10.10
 
 struct GfxBase *GfxBase;
 
+/* how a board is driven: what reports need to tell slow or wrong drawing
+ * apart (names as in prismboard.h) */
+static void board_lines(const char *what, ULONG f, ULONG h)
+{
+    static const char *const fn[] = { "", "", "", "hardware-pointer", "", "blitter-32bit",
+        "shadow", "ACCEL-BROKEN", "blitter-off", "banked", "composed", "reinit" };
+    int i;
+    printf("%sBoard flags $%04lx:", what, (unsigned long)f);
+    for (i = 0; i < (int)(sizeof(fn) / sizeof(fn[0])); i++)
+        if ((f & (1UL << i)) && fn[i][0])
+            printf(" %s", fn[i]);
+    printf("\n%sIn hardware:%s%s%s%s%s%s%s\n", what, h & PRISM_HW_FILL ? " fills" : "",
+           h & PRISM_HW_COPY ? " copies" : "", h & PRISM_HW_BETWEEN ? " bitmap-to-bitmap" : "",
+           h & PRISM_HW_TEXT ? " text" : "", h & PRISM_HW_LINE ? " lines" : "",
+           h & PRISM_HW_PLANAR ? " planar" : "", h ? "" : " nothing (all on the CPU)");
+}
+
 int main(void)
 {
     struct PrismSem *ps;
@@ -34,21 +51,13 @@ int main(void)
     if (ps)
         printf("PrismD is running: board \"%s\", interface version %u, %lu modes\n",
                ps->boardName ? ps->boardName : "?", ps->version, (unsigned long)ps->numModes);
-    if (ps && ps->version >= 4 && ps->boardFlags) {
-        /* how the board is driven: what reports need to tell slow or wrong
-         * drawing apart (names as in prismboard.h) */
-        static const char *const fn[] = { "", "", "", "hardware-pointer", "", "blitter-32bit",
-            "shadow", "ACCEL-BROKEN", "blitter-off", "banked", "composed", "reinit" };
-        ULONG f = *ps->boardFlags, h = ps->hwOps;
-        int i;
-        printf("Board flags $%04lx:", (unsigned long)f);
-        for (i = 0; i < (int)(sizeof(fn) / sizeof(fn[0])); i++)
-            if ((f & (1UL << i)) && fn[i][0])
-                printf(" %s", fn[i]);
-        printf("\nIn hardware:%s%s%s%s%s%s%s\n", h & PRISM_HW_FILL ? " fills" : "",
-               h & PRISM_HW_COPY ? " copies" : "", h & PRISM_HW_BETWEEN ? " bitmap-to-bitmap" : "",
-               h & PRISM_HW_TEXT ? " text" : "", h & PRISM_HW_LINE ? " lines" : "",
-               h & PRISM_HW_PLANAR ? " planar" : "", h ? "" : " nothing (all on the CPU)");
+    if (ps && ps->version >= 4 && ps->boardFlags)
+        board_lines("", *ps->boardFlags, ps->hwOps);
+    if (ps && ps->version >= 5 && ps->numBoards > 1 && ps->board2Flags) {
+        printf("Second board \"%s\" (its modes $7a01xxxx, PRISM2:), %lu KB; the first %lu KB\n",
+               ps->board2Name ? ps->board2Name : "?", (unsigned long)ps->vramKB[1],
+               (unsigned long)ps->vramKB[0]);
+        board_lines("  second board: ", *ps->board2Flags, ps->board2HwOps);
     }
     Permit();
     if (!ps)

@@ -19,6 +19,7 @@ static struct Slot {
     BOOL stalled;
     struct Task *childTask;
 } slots[DRIVER_SLOTS];
+BOOL driverQuiet;
 
 /* Is the driver process still there? One that ends without replying (its
  * startup failed, or BOARD= named some other program) must not be waited
@@ -59,7 +60,7 @@ BOOL driver_open(struct PrismBoard *b,const char *name,const struct PrismDriverC
     snprintf(path,sizeof(path),"PROGDIR:Drivers/%s.driver",name);
     segment=LoadSeg(path);
     if(!segment) { snprintf(path,sizeof(path),"LIBS:Prism/%s.driver",name);segment=LoadSeg(path); }
-    if(!segment) { printf("PrismD: cannot load %s driver\n",name);return FALSE; }
+    if(!segment) { if(!driverQuiet) printf("PrismD: cannot load %s driver\n",name);return FALSE; }
     r=AllocVec(sizeof(*r),MEMF_PUBLIC|MEMF_CLEAR);
     port=CreateMsgPort();input=Open("NIL:",MODE_OLDFILE);
     if(!r || !port || !input) {
@@ -109,8 +110,9 @@ BOOL driver_open(struct PrismBoard *b,const char *name,const struct PrismDriverC
             printf("PrismD: %s driver ABI/version or layout mismatch; reinstall matching modules\n",name);
         else if(r->status==PRD_NO_RESOURCES)
             printf("PrismD: %s driver could not open its libraries or message port\n",name);
-        else if(r->status==PRD_NOT_FOUND)
-            printf("PrismD: %s driver found no supported board\n",name);
+        else if(r->status==PRD_NOT_FOUND) {
+            if(!driverQuiet) printf("PrismD: %s driver found no supported board\n",name);
+        }
         else printf("PrismD: %s driver startup was cancelled\n",name);
         DeleteMsgPort(port);FreeVec(r);return FALSE;
     }
@@ -140,6 +142,10 @@ static void slot_close(struct Slot *sl)
         WaitPort(sl->replies);GetMsg(sl->replies);
     }
     DeleteMsgPort(sl->replies);FreeVec(sl->active);sl->active=NULL;sl->replies=NULL;sl->stalled=FALSE;
+}
+void driver_close_slot(int n)
+{
+    if(n>=0 && n<DRIVER_SLOTS) slot_close(&slots[n]);
 }
 /* every driver, the last started first */
 void driver_close(void)
