@@ -390,18 +390,24 @@ static int write_wbmode(LONG slot)
      * well makes IPrefs try to reset the Workbench screen there and then
      * ("please close all windows"), under the installer's own window. */
     static const char *files[1] = { "ENVARC:Sys/screenmode.prefs" };
+    static struct PrismPrefs prefs;  /* for the custom sizes' slots */
     UBYTE f[62];
     ULONG id;
     UWORD w, h;
     int i, rc = 0;
+
+    if (!prefs_load(&prefs, PREFS_ENVARC))
+        prefs_load(&prefs, PREFS_ENV);
 
     if (slot < 0 || slot >= PREFS_NMODES) {
         printf("PrismSetup: WBMODE takes a mode slot, 0 to %d\n", PREFS_NMODES - 1);
         return 10;
     }
     id = PRISM_MONITOR_ID | PREFS_IDLOW(slot);
-    w = prefs_sizes[PREFS_SIZE(slot)][0];
-    h = prefs_sizes[PREFS_SIZE(slot)][1];
+    if (!prefs_size(&prefs, slot, &w, &h)) {
+        printf("PrismSetup: slot %ld is a custom size that is not set\n", (long)slot);
+        return 10;
+    }
     memset(f, 0, sizeof(f));
     memcpy(f, "FORM", 4);          f[7] = 54;
     memcpy(f + 8, "PREFPRHD", 8);  f[19] = 6;

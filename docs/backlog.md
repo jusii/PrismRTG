@@ -1,0 +1,43 @@
+# Backlog
+
+Features an RTG system is expected to have that PrismRTG does not yet,
+roughly in the order users ask for them. Kept here so nothing is
+forgotten; none of these is promised for a given release.
+
+In progress (2026-10-11), in this order: the mode editor (2), video overlay (1), then gamma (4), oversized screens (5) and larger pointers (6).
+
+1. **Video overlay.** A YUV window with colour keying through
+   cgxvideo.library and the Picasso96 PIP calls with YUV formats, for
+   video players. None of the supported cards has an overlay engine we
+   drive (the Cirrus 5426/5428/5434 have none; the ZZ9000's firmware
+   offers none), so this is a software path: the player's YUV frames are
+   converted on the CPU and shown through the PIP compositor.
+2. **A mode editor.** Custom resolutions and refresh rates per monitor
+   with a test button, as Picasso96Mode and CGXMode have. Where the driver
+   computes its own timings (the Cirrus family, UAE) any size can be
+   offered; the ZZ9000 has a fixed list in its firmware.
+3. **Monitor power saving.** DPMS standby and off from the screen
+   blanker. The Cirrus register bits are in docs/cirrus-picasso2-hw.md
+   (GRE on the 5428, the sync bits on the 5434); nothing uses them yet.
+4. **Gamma and brightness** per board where the DAC supports it.
+5. **Oversized screens with autoscroll.** A screen larger than the display
+   that pans with the pointer. The panning primitive exists in the
+   drivers; the rest is Intuition-side work (SA_Overscan, SA_AutoScroll).
+6. **Larger and multi-colour pointers** from the OS 3.2 pointer
+   preferences. The classic two-colour sprite is handled; bigger ones fall
+   to the software pointer today.
+7. **The newer CyberGraphX calls** (WritePixelArrayAlpha,
+   ProcessPixelArray, ...). Check which our cybergraphics.library answers;
+   a few modern programs use them.
+8. **Planar screens on the card** with a chunky conversion, so old
+   planar-only software runs on a card-only monitor. Low priority now
+   that screen mode promotion exists.
+9. **Settings from the other systems.** Reading Picasso96's settings on a
+   first install so a user who switches keeps their resolutions.
+10. **An ARexx port** on PrismD or PrismPrefs, for scripts that switch
+    modes or query the board.
+11. **Update mirror.** An HTTPS directory of the author's with latest.txt
+    and the archive, for the MIRROR= setting (the tool supports it; no
+    mirror exists yet).
+
+Out of scope: 3D acceleration (no supported card has it).

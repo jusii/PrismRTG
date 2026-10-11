@@ -16,6 +16,10 @@
  *   LOG=ON|OFF
  *   PALETTE=RGB|BGR             (Piccolo/Spectrum only, see drv_picasso2.c)
  *   MODE=640x480x8 ON 72        (size x depth, ON/OFF, refresh Hz or 0)
+ *   CUSTOM1=1152x864            (a size of the user's own, slots 11-14; up to
+ *                                CUSTOM4; a board shows it if its driver can
+ *                                time it - the Cirrus family computes a VESA
+ *                                GTF timing, the ZZ9000 has its firmware's list)
  *   PROMOTE=ON|OFF              (native-chipset screens open on the board)
  *   PROMOTEPROG=<program>       (promoted even with PROMOTE=OFF)
  *   KEEPPROG=<program>          (left on the chipset even with PROMOTE=ON)
@@ -40,12 +44,14 @@
 #define PREFS_ENV     "ENV:Prism.prefs"
 #define PREFS_ENVARC  "ENVARC:Prism.prefs"
 
-#define PREFS_NSIZES  11
+#define PREFS_NFIXED  11             /* the sizes every build offers         */
+#define PREFS_NCUSTOM 4              /* CUSTOM1..4=WxH, the user's own sizes */
+#define PREFS_NSIZES  (PREFS_NFIXED + PREFS_NCUSTOM)
 #define PREFS_NDEPTHS 4
 #define PREFS_NMODES  (PREFS_NSIZES * PREFS_NDEPTHS)
 #define PREFS_NRATES  5
 
-extern const UWORD prefs_sizes[PREFS_NSIZES][2];
+extern const UWORD prefs_sizes[PREFS_NFIXED][2];
 extern const UBYTE prefs_depths[PREFS_NDEPTHS];  /* bits per pixel: 8, 16, 24, 32 */
 extern const UBYTE prefs_rates[PREFS_NRATES];    /* 0 = driver's default   */
 
@@ -83,6 +89,7 @@ struct PrismPrefs {
                                         board if there is one (multi-board.md) */
     UBYTE on[PREFS_NMODES];          /* mode offered                       */
     UBYTE hz[PREFS_NMODES];          /* refresh wanted, 0 = default        */
+    UWORD custom[PREFS_NCUSTOM][2];  /* CUSTOMn= width, height; 0 = unused */
     UBYTE promote;                   /* PROMOTE=ON: native screens on the board */
     UBYTE nprog;
     struct PrefsProg prog[PREFS_NPROGS];
@@ -93,6 +100,9 @@ struct PrismPrefs {
 };
 
 void prefs_default(struct PrismPrefs *p);
+/* the size of mode slot i (a fixed one or a CUSTOMn); FALSE for an unset
+ * custom slot */
+BOOL prefs_size(const struct PrismPrefs *p, int i, UWORD *w, UWORD *h);
 /* the program's entry in the promotion list, or -1 */
 int  prefs_prog_find(const struct PrismPrefs *p, const char *name);
 /* add or change an entry; FALSE when the list is full or the name is no good */

@@ -351,6 +351,16 @@ blitter off.
   edge to edge has a band left over; programs that bring their own bitmap
   (`CUSTOMBITMAP`) or ask for more than 8 planes are left alone, and so
   is Workbench itself (Prefs/ScreenMode puts it on the board).
+* **Your own sizes** (the four "custom" entries in PrismPrefs' mode list,
+  `CUSTOM1=1152x864` .. `CUSTOM4=` in the prefs file): pick one, give it a
+  width (a multiple of 8) and a height, Set size, and Test shows it at
+  once; PrismD offers it after a restart, at every depth the board
+  manages. Whether a board can show a size is its driver's call: the
+  Cirrus family (Picasso II, GBAPII++, Piccolo, Spectrum) computes a VESA
+  GTF timing for any size up to 2048x1016 within its pixel clock, so an
+  unusual monitor's 1152x864 or 1360x768 works; the ZZ9000 has its
+  firmware's list (1600x1200, 720x576, 2560x1440 and more are in it but
+  not in PrismRTG's fixed list); a P96 card driver has its own.
 * **Update check** ("Updates" in PrismPrefs, `UPDATES=GITHUB|MIRROR|BOTH`,
   then "Check now"): `C:PrismUpdate` asks GitHub's release API, or a mirror
   (`MIRROR=https://host/dir/`, a directory with `latest.txt` holding

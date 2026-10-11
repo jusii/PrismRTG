@@ -13,7 +13,7 @@
 #include "prefs.h"
 
 /* New sizes go at the END: a slot's position is its ModeID. */
-const UWORD prefs_sizes[PREFS_NSIZES][2] = {
+const UWORD prefs_sizes[PREFS_NFIXED][2] = {
     { 640, 400 }, { 640, 480 }, { 800, 600 }, { 1024, 768 },
     { 1280, 720 }, { 1280, 1024 },
     /* low resolution, for games that draw 320 pixels wide and assume the
@@ -101,17 +101,43 @@ void prefs_prog_remove(struct PrismPrefs *p, int i)
     p->nprog--;
 }
 
+BOOL prefs_size(const struct PrismPrefs *p, int i, UWORD *w, UWORD *h)
+{
+    int s = PREFS_SIZE(i);
+    if (s < PREFS_NFIXED) {
+        *w = prefs_sizes[s][0];
+        *h = prefs_sizes[s][1];
+        return TRUE;
+    }
+    *w = p->custom[s - PREFS_NFIXED][0];
+    *h = p->custom[s - PREFS_NFIXED][1];
+    return *w != 0 && *h != 0;
+}
+
+/* CUSTOM<n>=WxH: slot n's size; widths in multiples of 8 */
+static void parse_custom(struct PrismPrefs *p, const char *key, char *v)
+{
+    unsigned w, h;
+    int n = key[6] - '1';
+    if (n < 0 || n >= PREFS_NCUSTOM || key[7] || sscanf(v, "%ux%u", &w, &h) != 2)
+        return;
+    if (w < 320 || w > 4096 || (w & 7) || h < 200 || h > 4096)
+        return;
+    p->custom[n][0] = w;
+    p->custom[n][1] = h;
+}
+
 static void parse_mode(struct PrismPrefs *p, char *v)
 {
     unsigned w, h, d, hz = 0;
+    UWORD sw, sh;
     char state[8] = "ON";
     int i;
 
     if (sscanf(v, "%ux%ux%u %7s %u", &w, &h, &d, state, &hz) < 3)
         return;
     for (i = 0; i < PREFS_NMODES; i++)
-        if (prefs_sizes[PREFS_SIZE(i)][0] == w && prefs_sizes[PREFS_SIZE(i)][1] == h &&
-            prefs_depths[PREFS_DEPTH(i)] == d) {
+        if (prefs_size(p, i, &sw, &sh) && sw == w && sh == h && prefs_depths[PREFS_DEPTH(i)] == d) {
             p->on[i] = onoff(state);
             p->hz[i] = hz < 256 ? hz : 0;
             return;
@@ -167,6 +193,8 @@ BOOL prefs_load(struct PrismPrefs *p, const char *path)
             p->clutBGR = same(v, "BGR");
         } else if (same(line, "MODE")) {
             parse_mode(p, v);
+        } else if (!strnicmp(line, "CUSTOM", 6)) {
+            parse_custom(p, line, v);
         } else if (same(line, "PROMOTE")) {
             p->promote = onoff(v);
         } else if (same(line, "PROMOTEPROG") || same(line, "KEEPPROG")) {
@@ -210,10 +238,16 @@ BOOL prefs_save(const struct PrismPrefs *p, const char *path)
         fprintf(f, "MIRROR=%s\n", p->mirror);
     for (i = 0; i < p->nprog; i++)
         fprintf(f, "%s=%s\n", p->prog[i].keep ? "KEEPPROG" : "PROMOTEPROG", p->prog[i].name);
-    for (i = 0; i < PREFS_NMODES; i++)
-        fprintf(f, "MODE=%ux%ux%u %s %u\n", prefs_sizes[PREFS_SIZE(i)][0],
-                prefs_sizes[PREFS_SIZE(i)][1], prefs_depths[PREFS_DEPTH(i)],
-                p->on[i] ? "ON" : "OFF", p->hz[i]);
+    /* the custom sizes before the MODE lines that name them */
+    for (i = 0; i < PREFS_NCUSTOM; i++)
+        if (p->custom[i][0] && p->custom[i][1])
+            fprintf(f, "CUSTOM%d=%ux%u\n", i + 1, p->custom[i][0], p->custom[i][1]);
+    for (i = 0; i < PREFS_NMODES; i++) {
+        UWORD w, h;
+        if (prefs_size(p, i, &w, &h))
+            fprintf(f, "MODE=%ux%ux%u %s %u\n", w, h, prefs_depths[PREFS_DEPTH(i)],
+                    p->on[i] ? "ON" : "OFF", p->hz[i]);
+    }
     ok = !ferror(f);
     return fclose(f) == 0 && ok;
 }

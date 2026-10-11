@@ -37,7 +37,7 @@ static const char version[] __attribute__((used)) = "$VER: PrismPrefs " PRISM_RE
 enum { GAD_LIST = 1, GAD_ON, GAD_HZ, GAD_BOARD, GAD_BLIT, GAD_LOG,
        GAD_SAVE, GAD_USE, GAD_DEFAULTS, GAD_CANCEL, GAD_STATUS, GAD_TEST, GAD_BGR,
        GAD_DRAG, GAD_SOFTPTR, GAD_PROMOTE, GAD_PLIST, GAD_PROG, GAD_PADD, GAD_PKEEP, GAD_PDEL,
-       GAD_UPDATES, GAD_CHECK };
+       GAD_UPDATES, GAD_CHECK, GAD_W, GAD_H, GAD_SETSIZE };
 
 static STRPTR hzLabels[] = { "Default", "60 Hz", "70 Hz", "72 Hz", "75 Hz", NULL };
 /* the Board cycle: Auto three ways - every board PrismD finds (two at
@@ -58,7 +58,7 @@ struct Gui {
     APTR vi;
     struct Window *win;
     struct Gadget *glist, *gList, *gOn, *gHz, *gBoard, *gBlit, *gLog, *gBgr, *gDrag, *gSoft, *gStatus;
-    struct Gadget *gPromote, *gPList, *gProg, *gUpdates;
+    struct Gadget *gPromote, *gPList, *gProg, *gUpdates, *gW, *gH, *gSet;
     struct List modes;
     struct Node node[PREFS_NMODES];
     char text[PREFS_NMODES][48];
@@ -143,13 +143,20 @@ static void entry_text(struct Gui *g, int i)
     BOOL live1 = g->running && !ModeNotAvailable(PRISM_CARD_ID(0) | PREFS_IDLOW(i));
     BOOL live2 = g->running && g->boards > 1 && !ModeNotAvailable(PRISM_CARD_ID(1) | PREFS_IDLOW(i));
 
+    UWORD w, h;
+
     if (g->prefs.hz[i])
         sprintf(hz, "%u Hz", g->prefs.hz[i]);
     else
         strcpy(hz, "default");
+    if (!prefs_size(&g->prefs, i, &w, &h)) {
+        /* a custom size not set yet: pick it and give it a size below */
+        sprintf(g->text[i], "    custom %d  %2u-bit  (no size yet)",
+                PREFS_SIZE(i) - PREFS_NFIXED + 1, prefs_depths[PREFS_DEPTH(i)]);
+        return;
+    }
     sprintf(g->text[i], "%-3s %4ux%-4u %2u-bit %-7s %s",
-            g->prefs.on[i] ? "on" : "--",
-            prefs_sizes[PREFS_SIZE(i)][0], prefs_sizes[PREFS_SIZE(i)][1],
+            g->prefs.on[i] ? "on" : "--", w, h,
             prefs_depths[PREFS_DEPTH(i)], hz,
             live1 && live2 ? "live 1+2" : live1 ? (g->boards > 1 ? "live 1" : "live") : live2 ? "live 2" : "");
 }
@@ -228,6 +235,36 @@ static void show_settings(struct Gui *g)
     GT_SetGadgetAttrs(g->gSoft, g->win, NULL, GTCB_Checked, (ULONG)p->softwarePointer, TAG_END);
     GT_SetGadgetAttrs(g->gPromote, g->win, NULL, GTCB_Checked, (ULONG)p->promote, TAG_END);
     GT_SetGadgetAttrs(g->gUpdates, g->win, NULL, GTCY_Active, (ULONG)(p->updates < UPD_COUNT ? p->updates : 0), TAG_END);
+    {
+        /* the size fields follow a custom slot and are ghosted for a fixed one */
+        int k = PREFS_SIZE(g->sel) - PREFS_NFIXED;
+        BOOL custom = k >= 0;
+        GT_SetGadgetAttrs(g->gW, g->win, NULL, GA_Disabled, !custom,
+                          GTIN_Number, custom ? (ULONG)p->custom[k][0] : 0, TAG_END);
+        GT_SetGadgetAttrs(g->gH, g->win, NULL, GA_Disabled, !custom,
+                          GTIN_Number, custom ? (ULONG)p->custom[k][1] : 0, TAG_END);
+        GT_SetGadgetAttrs(g->gSet, g->win, NULL, GA_Disabled, !custom, TAG_END);
+    }
+}
+
+/* Set size: the selected custom slot takes the Width and Height fields */
+static void set_size(struct Gui *g)
+{
+    int k = PREFS_SIZE(g->sel) - PREFS_NFIXED;
+    LONG w = ((struct StringInfo *)g->gW->SpecialInfo)->LongInt;
+    LONG h = ((struct StringInfo *)g->gH->SpecialInfo)->LongInt;
+    if (k < 0) {
+        set_status(g, "Pick one of the four custom entries in the list first");
+        return;
+    }
+    if (w < 320 || w > 4096 || (w & 7) || h < 200 || h > 4096) {
+        set_status(g, "Width 320 to 4096 in steps of 8, height 200 to 4096");
+        return;
+    }
+    g->prefs.custom[k][0] = w;
+    g->prefs.custom[k][1] = h;
+    refresh_list(g);
+    set_status(g, "Set. Test shows it now; PrismD offers it after a restart (if the board can)");
 }
 
 /* ---- Check now: PrismUpdate, with the settings as they are in the window ---- */
@@ -328,11 +365,16 @@ static LONG test_mode(struct Gui *g, LONG i, BOOL ask)
     LONG (*begin)(ULONG, ULONG, ULONG, ULONG, const char *) = NULL;
     LONG (*beginOn)(UBYTE, ULONG, ULONG, ULONG, ULONG, const char *) = NULL;
     void (*end)(void) = NULL;
-    UWORD w = prefs_sizes[PREFS_SIZE(i)][0], h = prefs_sizes[PREFS_SIZE(i)][1];
+    UWORD w, h;
     UBYTE bits = prefs_depths[PREFS_DEPTH(i)], hz = g->prefs.hz[i];
     char label[96], rate[16];
     LONG rc, t;
     BOOL stop = FALSE;
+
+    if (!prefs_size(&g->prefs, i, &w, &h)) {
+        set_status(g, "Give this custom slot a size first (Width, Height, Set size)");
+        return -1;
+    }
 
     Forbid();
     if ((s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME)) && s->version >= 2) {
@@ -503,8 +545,22 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     ng.ng_GadgetText = "Program"; ng.ng_Flags = PLACETEXT_LEFT; ng.ng_GadgetID = GAD_PROG;
     gad = g->gProg = CreateGadget(STRING_KIND, gad, &ng, GTST_MaxChars, PREFS_PROGNAME, TAG_END);
 
+    /* a custom size for the selected custom slot: Width, Height, Set size */
+    y = py + plH + 4 + row;
+    ng.ng_LeftEdge = cl + 6 * fw; ng.ng_TopEdge = y; ng.ng_Width = 7 * fw + 8; ng.ng_Height = gh;
+    ng.ng_GadgetText = "Width"; ng.ng_Flags = PLACETEXT_LEFT; ng.ng_GadgetID = GAD_W;
+    gad = g->gW = CreateGadget(INTEGER_KIND, gad, &ng, GTIN_Number, 0, GTIN_MaxChars, 4,
+                               GA_Disabled, TRUE, TAG_END);
+    ng.ng_LeftEdge = cl + 21 * fw + 8;
+    ng.ng_GadgetText = "Height"; ng.ng_GadgetID = GAD_H;
+    gad = g->gH = CreateGadget(INTEGER_KIND, gad, &ng, GTIN_Number, 0, GTIN_MaxChars, 4,
+                               GA_Disabled, TRUE, TAG_END);
+    ng.ng_LeftEdge = cl + 30 * fw + 24; ng.ng_Width = 10 * fw + 8;
+    ng.ng_GadgetText = "Set size"; ng.ng_Flags = PLACETEXT_IN; ng.ng_GadgetID = GAD_SETSIZE;
+    gad = g->gSet = CreateGadget(BUTTON_KIND, gad, &ng, GA_Disabled, TRUE, TAG_END);
+
     /* status line, then the Save / Use / Defaults / Cancel row */
-    by = py + plH + 4 + row + 2;
+    by = y + row + 2;
     ng.ng_LeftEdge = cl; ng.ng_TopEdge = by;
     ng.ng_Width = rx + rw - cl; ng.ng_Height = gh;
     ng.ng_GadgetText = NULL; ng.ng_Flags = 0; ng.ng_GadgetID = GAD_STATUS;
@@ -653,6 +709,11 @@ static void event_loop(struct Gui *g)
                     break;
                 case GAD_CHECK:
                     check_update(g);
+                    break;
+                case GAD_SETSIZE:
+                case GAD_W:                      /* Return in a field: as Set size */
+                case GAD_H:
+                    set_size(g);
                     break;
                 case GAD_PROMOTE:
                     g->prefs.promote = (gad->Flags & GFLG_SELECTED) ? 1 : 0;

@@ -118,6 +118,15 @@ Screen mode promotion
   screen drawn edge to edge leaves a band; programs with their own bitmap
   or more than 8 planes are left alone. PrismD reads this when it starts.
 
+Your own sizes
+  The mode list ends with four "custom" entries: pick one, type a width
+  (a multiple of 8) and a height, Set size, and Test shows it at once.
+  PrismD offers it after a restart at every depth the board manages.
+  The Picasso II family computes a VESA timing for any size within its
+  pixel clock (1152x864, 1360x768 ...); the ZZ9000 shows the sizes its
+  firmware has (1600x1200, 720x576, 2560x1440 ...). In the prefs file:
+  CUSTOM1=1152x864 .. CUSTOM4=.
+
 Update check
   "Updates" in PrismPrefs (GitHub, a mirror, or GitHub then the mirror)
   and "Check now": C:PrismUpdate asks for the newest release over HTTPS

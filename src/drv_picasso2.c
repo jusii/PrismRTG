@@ -332,12 +332,49 @@ static void write_crtc(struct PrismBoard *b, const struct P2Timing *t, ULONG pit
     wcrt(b, 0x1b, 0x22 | ((pitch8 >> 4) & 0x10) | (rcrt(b, 0x1b) & 0x0d));
 }
 
+/* A size or rate the table does not have (PrismPrefs' custom sizes, an
+ * unlisted refresh): the VESA Generalized Timing Formula, which is what a
+ * monitor expects of an unlisted mode. 8-pixel cells, sync 8% of the line,
+ * 550 us of vertical sync and back porch, 1 line of front porch, 3 sync
+ * lines, sync negative horizontally and positive vertically. The CRTC
+ * fields set the limits: a line of up to 2080 pixels, 1023 lines. */
+static const struct P2Timing *p2_gtf(const struct PrismMode *m, struct P2Timing *t)
+{
+    ULONG hz = m->refresh ? m->refresh : 60, w = m->width, h = m->height;
+    ULONG hperiod, vsbp, vtotal, duty10, hblank, htotal, hsync, hfront;
+
+    if (w < 320 || w > 2048 || (w & 7) || h < 200 || h > 1016 || hz < 50 || hz > 100)
+        return NULL;
+    hperiod = (1000000000UL / hz - 550000UL) / (h + 1);    /* a line, in ns */
+    vsbp = (550000UL + hperiod / 2) / hperiod;               /* sync + back porch, lines */
+    if (vsbp < 4)
+        vsbp = 4;
+    vtotal = h + 1 + vsbp;
+    duty10 = 300 - (3 * hperiod) / 1000;                     /* blanking share, tenths of a percent */
+    if (duty10 < 100)
+        duty10 = 100;
+    hblank = (w * duty10 / (1000 - duty10) + 8) / 16 * 16;
+    htotal = w + hblank;
+    hsync = ((htotal * 8 / 100) + 4) / 8 * 8;
+    hfront = hblank / 2 - hsync;
+    if (vtotal > 1023 || htotal > 2080 || hfront < 8)
+        return NULL;
+    memset(t, 0, sizeof(*t));
+    t->w = w;  t->h = h;  t->hz = hz;
+    t->khz = htotal * 1000000UL / hperiod;
+    t->hss = w + hfront;  t->hse = t->hss + hsync;  t->ht = htotal;
+    t->vss = h + 1;       t->vse = h + 4;           t->vt = vtotal;
+    t->hpos = 0;          t->vpos = 1;
+    return t;
+}
+
 /* Validate a mode without touching the hardware. Fills m->bytesPerRow and,
  * for SetMode, the timing, SR7 depth bits, HDR value and bytes per pixel. */
 static const struct P2Timing *p2_check(struct PrismBoard *b, struct PrismMode *m,
                                        UBYTE *sr7, UBYTE *hdr, UBYTE *bppOut)
 {
     struct P2Priv *p = b->priv;
+    static struct P2Timing gtf;      /* one mode is set at a time (lock) */
     const struct P2Timing *t = NULL;
     UWORD i;
     UBYTE bpp;
@@ -348,6 +385,8 @@ static const struct P2Timing *p2_check(struct PrismBoard *b, struct PrismMode *m
             t = &p2_timings[i];
             break;
         }
+    if (!t)
+        t = p2_gtf(m, &gtf);
     if (!t)
         return NULL;
 

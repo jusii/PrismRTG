@@ -291,10 +291,13 @@ static UBYTE board_format(struct PrismBoard *b, UBYTE bits, UBYTE nth)
 static BOOL mode_fits(struct PrismBoard *b, struct ModeRec *r, ULONG i, UBYTE bits, UBYTE hz)
 {
     UBYTE nth, fmt;
+    UWORD w, h;
+    if (!prefs_size(&prefs, i, &w, &h))
+        return FALSE;                        /* an unset custom slot */
     for (nth = 0; (fmt = board_format(b, bits, nth)) != PF_COUNT; nth++) {
         memset(&r->m, 0, sizeof(r->m));
-        r->m.width = prefs_sizes[PREFS_SIZE(i)][0];
-        r->m.height = prefs_sizes[PREFS_SIZE(i)][1];
+        r->m.width = w;
+        r->m.height = h;
         r->m.format = fmt;
         r->m.refresh = hz;
         if (b->checkMode(b, &r->m))
