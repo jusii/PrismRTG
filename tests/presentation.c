@@ -170,7 +170,7 @@ int main(void)
      * Retry allocation after a cooldown, or for an explicit new PIP. */
     board.flags=PBF_HW_CURSOR;board.cursorShow=cursor_show;
     board.cursorMove=cursor_move;board.cursorImage=cursor_image;
-    on=haveImage=TRUE;posX=posY=0;screenTop=1;failAllocate=TRUE;
+    on=haveImage=TRUE;posX=0;posY=1;screenTop=1;failAllocate=TRUE; /* display position */
     n=allocations;present_tick();pointer_tick();
     assert(!present_ready() && hwVisible && hardwareY==1);
     present_tick();assert(allocations==n+1);

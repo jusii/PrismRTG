@@ -36,7 +36,7 @@ static UBYTE shifted[CURSOR_SIZE * CURSOR_SIZE];
 static UBYTE colours[9];
 static BOOL  haveImage, on;
 static volatile BOOL dirtyImage, dirtyPos;
-volatile WORD posX, posY;                        /* sprite position (prismint.h) */
+volatile WORD posX, posY;     /* sprite position on the display (prismint.h) */
 static WORD loadedDX = -1, loadedDY = -1;        /* clip shift now loaded  */
 static struct ViewPort *vpOn;
 static WORD  imgW, imgH;                         /* extent of the image    */
@@ -200,18 +200,34 @@ static void sw_tick(void)
     sw_draw(p);
 }
 
+/* Where a composed frame shows the pointer: its display position, kept on
+ * the frame. Below a dragged screen Intuition lets the pointer go as far
+ * as the screen behind reaches; when that screen is bigger than the
+ * frame the pointer would leave the picture (issue #1, beta 5). */
+static void frame_pos(UWORD w, UWORD h, WORD *x, WORD *y)
+{
+    *x = posX; *y = posY;
+    if (*x > (WORD)w - 1) *x = w - 1;
+    if (*y > (WORD)h - 1) *y = h - 1;
+}
+
 BOOL pointer_compose_rows(WORD top,WORD *y0,WORD *y1)
 {
+    struct PBitMap *front,*back; WORD t,backTop,x; UWORD w=32767,h=32767;
+    (void)top;
     if (!haveImage || !pointer_software()) return FALSE;
-    *y0=posY+top;*y1=*y0+CURSOR_SIZE;
+    prism_display_layers(&front,&back,&t,&backTop,&w,&h);
+    frame_pos(w,h,&x,y0);*y1=*y0+CURSOR_SIZE;
     return TRUE;
 }
 
 void pointer_compose(struct PBitMap *dst,WORD top)
 {
     UBYTE pixels[4][4];
-    WORD x,y,px=posX,py=posY;UBYTE pen,k;     /* position taken once (see sw_draw) */
+    WORD x,y,px,py;UBYTE pen,k;
+    (void)top;
     if (!haveImage || !pointer_software()) return;
+    frame_pos(dst->w,dst->h,&px,&py);           /* position taken once (see sw_draw) */
     /* Quantize the three sprite colours once, rather than once per pixel. */
     for(pen=1;pen<4;pen++) {
         ULONG rgb=((ULONG)colours[(pen-1)*3]<<16)|
@@ -219,7 +235,7 @@ void pointer_compose(struct PBitMap *dst,WORD top)
         composite_put(dst,pixels[pen],rgb);
     }
     for(y=0;y<CURSOR_SIZE;y++) for(x=0;x<CURSOR_SIZE;x++) {
-        LONG dx=(LONG)px+x,dy=(LONG)py+y+top;
+        LONG dx=(LONG)px+x,dy=(LONG)py+y;
         UBYTE *d;
         pen=image[y*CURSOR_SIZE+x];
         if(!pen || dx<0 || dy<0 || dx>=dst->w || dy>=dst->h) continue;
@@ -238,11 +254,6 @@ static void apply(void)
         return;
     }
 
-    if (pointer_software() && prism_dragging()) {
-        struct PBitMap *front,*back; WORD top,backTop; UWORD w,h;
-        prism_display_layers(&front,&back,&top,&backTop,&w,&h);
-        y += top;
-    }
     if (x < 0) { dx = -x; x = 0; }
     if (y < 0) { dy = -y; y = 0; }
     if (dx >= CURSOR_SIZE) dx = CURSOR_SIZE - 1;
@@ -339,6 +350,7 @@ void pointer_catchup(void)
 /* ---- patches -------------------------------------------------------- */
 
 static WORD logged;
+static WORD hot;                 /* sprite position minus the mouse position */
 
 /* MoveSprite(vp a0, sprite a1, x d0, y d1) */
 LONG h_MoveSprite(struct Regs *r)
@@ -347,15 +359,26 @@ LONG h_MoveSprite(struct Regs *r)
     call_regs(o_MoveSprite, r);
     if (s && s->num == 0) {
         struct Screen *fs = IntuitionBase->FirstScreen;
-        WORD x = RW(0), y = RW(1);
+        WORD x, y = RW(1);
         /* On a Prism screen Intuition's sprite X comes out as 0 whatever
-         * the mode reports, while Y is right (mouse Y minus the hot spot).
-         * Take X from the screen's mouse position with the same hot-spot
-         * offset as Y. */
+         * the mode reports, while Y is right relative to the ViewPort it
+         * names (mouse Y minus the hot spot). So only the hot spot is taken
+         * from here, and the position is Intuition's own mouse position,
+         * which is on the display whatever screen the pointer is over: the
+         * sprite position is relative to the screen named, which below a
+         * dragged screen is the one behind (the pointer went to x 0 or off
+         * the picture), and while a screen is dragged Intuition places the
+         * sprite before it moves the screen (the pointer ran a step
+         * behind). Issue #1, beta 5. */
         if (fs && r->a[0] == (LONG)&fs->ViewPort) {
-            WORD hot = y - fs->MouseY;
-            x = fs->MouseX + hot;
+            /* a hot spot is a small offset up/left; mid-drag the sprite
+             * position is a step stale and gives something else */
+            WORD h = y - fs->MouseY;
+            if (h > -32 && h <= 0)
+                hot = h;
         }
+        x = IntuitionBase->MouseX + hot;
+        y = IntuitionBase->MouseY + hot;
         if (logged < 20 && (x != posX || y != posY)) {
             logged++;
             dbg("MoveSprite -> %d,%d\n", x, y);
