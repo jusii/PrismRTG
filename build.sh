@@ -41,6 +41,15 @@ $CC $CFLAGS -s -o out/PrismBench tools/prismbench.c -lm
 
 echo "== M5 =="
 $CC $CFLAGS -s -o out/PrismPrefs tools/prismprefs.c src/prefs.c
+# PrismUpdate needs the AmiSSL SDK headers (the include/ directory of
+# https://github.com/jens-maus/amissl, Apache 2.0): AMISSL_INC, default
+# ~/amissl-sdk/include. Without them the rest still builds.
+AMISSL_INC=${AMISSL_INC:-$HOME/amissl-sdk/include}
+if [ -d "$AMISSL_INC" ]; then
+  $CC $CFLAGS -I"$AMISSL_INC" -s -o out/PrismUpdate tools/prismupdate.c src/prefs.c
+else
+  echo "PrismUpdate skipped: no AmiSSL SDK headers at $AMISSL_INC"
+fi
 
 echo "== M6 =="
 $CC $CFLAGS -s -o out/PrismMon tools/prismmon.c src/prefs.c

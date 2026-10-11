@@ -15,6 +15,12 @@
 
 #define PRISM_SEMNAME     "prism"
 #define PRISM_VERSION     6
+/* the release this build belongs to, as the release tag names it without
+ * its "v" and "-beta" (v1.1-beta5 = 1.1b5): PrismUpdate compares it with
+ * GitHub's */
+#ifndef PRISM_RELEASE
+#define PRISM_RELEASE     "1.1b5"
+#endif
 
 /* Boot failsafe: DEVS:Monitors/Prism creates this before starting PrismD
  * and PrismD deletes it after a minute. Found at boot, it means the last

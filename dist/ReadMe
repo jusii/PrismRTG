@@ -118,6 +118,16 @@ Screen mode promotion
   screen drawn edge to edge leaves a band; programs with their own bitmap
   or more than 8 planes are left alone. PrismD reads this when it starts.
 
+Update check
+  "Updates" in PrismPrefs (GitHub, a mirror, or GitHub then the mirror)
+  and "Check now": C:PrismUpdate asks for the newest release over HTTPS
+  and offers to download and install it (the installer then runs as
+  usual, and the update takes effect at the next reboot). Needs a
+  running TCP/IP stack and AmiSSL 5, or an SSL offload with the AmiSSL
+  API. A mirror is MIRROR=https://host/dir/ in the prefs file, a
+  directory with latest.txt ("version archive"). From a Shell:
+  PrismUpdate, PrismUpdate GET.
+
 Dragging and PIP windows
   Vertical dragging between RTG screens (DRAGGING=ON) and P96 memory-window
   PIPs go through a compositor that redoes only what changed and copies the

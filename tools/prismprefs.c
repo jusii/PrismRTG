@@ -17,6 +17,7 @@
 #include <intuition/gadgetclass.h>
 #include <libraries/gadtools.h>
 #include <graphics/displayinfo.h>
+#include <dos/dostags.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include <proto/intuition.h>
@@ -35,7 +36,8 @@ static const char version[] __attribute__((used)) = "$VER: PrismPrefs 1.1b5 (10.
 
 enum { GAD_LIST = 1, GAD_ON, GAD_HZ, GAD_BOARD, GAD_BLIT, GAD_LOG,
        GAD_SAVE, GAD_USE, GAD_DEFAULTS, GAD_CANCEL, GAD_STATUS, GAD_TEST, GAD_BGR,
-       GAD_DRAG, GAD_SOFTPTR, GAD_PROMOTE, GAD_PLIST, GAD_PROG, GAD_PADD, GAD_PKEEP, GAD_PDEL };
+       GAD_DRAG, GAD_SOFTPTR, GAD_PROMOTE, GAD_PLIST, GAD_PROG, GAD_PADD, GAD_PKEEP, GAD_PDEL,
+       GAD_UPDATES, GAD_CHECK };
 
 static STRPTR hzLabels[] = { "Default", "60 Hz", "70 Hz", "72 Hz", "75 Hz", NULL };
 /* the Board cycle: Auto three ways - every board PrismD finds (two at
@@ -47,13 +49,16 @@ static STRPTR boardLabels[] = { "Auto", "Auto, swapped", "Auto, 1 board", "Picas
                                 "P96 driver", "UAE (native)", "Other (BOARD= in the prefs file)", NULL };
 /* LOG=OFF / ON / SYNC, in that order (prefs.log 0, 1, 2) */
 static STRPTR logLabels[] = { "Off", "On", "Sync", NULL };
+/* UPDATES= (UPD_OFF, UPD_GITHUB, UPD_MIRROR, UPD_BOTH) */
+static STRPTR updLabels[] = { "Off", "GitHub", "Mirror", "GitHub, then mirror", NULL };
+static const char *const updSource[] = { "OFF", "GITHUB", "MIRROR", "BOTH" };
 
 struct Gui {
     struct Screen *scr;
     APTR vi;
     struct Window *win;
     struct Gadget *glist, *gList, *gOn, *gHz, *gBoard, *gBlit, *gLog, *gBgr, *gDrag, *gSoft, *gStatus;
-    struct Gadget *gPromote, *gPList, *gProg;
+    struct Gadget *gPromote, *gPList, *gProg, *gUpdates;
     struct List modes;
     struct Node node[PREFS_NMODES];
     char text[PREFS_NMODES][48];
@@ -222,6 +227,53 @@ static void show_settings(struct Gui *g)
     GT_SetGadgetAttrs(g->gDrag, g->win, NULL, GTCB_Checked, (ULONG)p->dragging, TAG_END);
     GT_SetGadgetAttrs(g->gSoft, g->win, NULL, GTCB_Checked, (ULONG)p->softwarePointer, TAG_END);
     GT_SetGadgetAttrs(g->gPromote, g->win, NULL, GTCB_Checked, (ULONG)p->promote, TAG_END);
+    GT_SetGadgetAttrs(g->gUpdates, g->win, NULL, GTCY_Active, (ULONG)(p->updates < UPD_COUNT ? p->updates : 0), TAG_END);
+}
+
+/* ---- Check now: PrismUpdate, with the settings as they are in the window ---- */
+
+static void check_update(struct Gui *g)
+{
+    char cmd[320], line[160];
+    BPTR f;
+    LONG rc;
+
+    if (g->prefs.updates == UPD_OFF) {
+        set_status(g, "Updates are off: choose GitHub or a mirror first");
+        return;
+    }
+    set_status(g, "Asking for the latest release...");
+    sprintf(cmd, "C:PrismUpdate SOURCE=%s%s%s >T:PrismUpdate.out", updSource[g->prefs.updates],
+            g->prefs.mirror[0] ? " MIRROR=" : "", g->prefs.mirror);
+    rc = SystemTags((STRPTR)cmd, SYS_Input, 0, SYS_Output, 0, NP_StackSize, 65536, TAG_DONE);
+    line[0] = 0;
+    if ((f = Open((STRPTR)"T:PrismUpdate.out", MODE_OLDFILE))) {
+        if (FGets(f, (STRPTR)line, sizeof(line))) {
+            char *e = strpbrk(line, "\r\n");
+            if (e) *e = 0;
+        }
+        Close(f);
+    }
+    if (rc == -1 || !line[0]) {
+        set_status(g, "C:PrismUpdate is not installed");
+        return;
+    }
+    /* "PrismUpdate: " off the front: the status line is short */
+    set_status(g, strncmp(line, "PrismUpdate: ", 13) ? line : line + 13);
+    if (rc == RETURN_WARN) {
+        struct EasyStruct es = { sizeof(struct EasyStruct), 0, "PrismRTG update", "%s\n\n"
+                                 "Download it and run its installer now?\n"
+                                 "The installer asks its usual questions; the update\n"
+                                 "takes effect at the next reboot.", "Download and install|Not now" };
+        if (EasyRequest(g->win, &es, NULL, (ULONG)(line + (strncmp(line, "PrismUpdate: ", 13) ? 0 : 13)))) {
+            sprintf(cmd, "C:PrismUpdate GET SOURCE=%s%s%s", updSource[g->prefs.updates],
+                    g->prefs.mirror[0] ? " MIRROR=" : "", g->prefs.mirror);
+            SystemTags((STRPTR)cmd, SYS_Asynch, TRUE, SYS_Input, 0,
+                       SYS_Output, (ULONG)Open((STRPTR)"CON:0/40/640/200/PrismRTG update/CLOSE/WAIT", MODE_NEWFILE),
+                       NP_StackSize, 65536, TAG_DONE);
+            set_status(g, "The update runs in its own window");
+        }
+    }
 }
 
 static void running_status(struct Gui *g)
@@ -414,6 +466,17 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     gad = g->gLog = CreateGadget(CYCLE_KIND, gad, &ng, GTCY_Labels, (ULONG)logLabels,
                                  GTCY_Active, (ULONG)(g->prefs.log <= 2 ? g->prefs.log : 1), TAG_END);
 
+    /* update checks (UPDATES=, PrismUpdate): where to look, and a check now */
+    y += row;
+    ng.ng_TopEdge = y;
+    ng.ng_GadgetText = "Updates"; ng.ng_GadgetID = GAD_UPDATES;
+    gad = g->gUpdates = CreateGadget(CYCLE_KIND, gad, &ng, GTCY_Labels, (ULONG)updLabels,
+                                     GTCY_Active, (ULONG)(g->prefs.updates < UPD_COUNT ? g->prefs.updates : 0), TAG_END);
+    y += row;
+    ng.ng_TopEdge = y;
+    ng.ng_GadgetText = "Check now"; ng.ng_Flags = PLACETEXT_IN; ng.ng_GadgetID = GAD_CHECK;
+    gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
+
     /* the mode list at least 12 lines, and as tall as the column beside it */
     listH = y + gh - (ct + fh + 2);
     if (listH < 12 * fh + 4)
@@ -575,6 +638,16 @@ static void event_loop(struct Gui *g)
                     set_status(g, g->prefs.softwarePointer
                                   ? "Pointer drawn by PrismRTG (for boards without one)"
                                   : "Board's own pointer where it has one");
+                    break;
+                case GAD_UPDATES:
+                    g->prefs.updates = code < UPD_COUNT ? code : UPD_OFF;
+                    set_status(g, code == UPD_OFF ? "No update checks"
+                                  : code == UPD_GITHUB ? "Check now asks GitHub's releases (needs AmiSSL 5)"
+                                  : code == UPD_MIRROR ? "Check now asks the mirror (MIRROR= in the prefs file)"
+                                  : "Check now asks GitHub, then the mirror");
+                    break;
+                case GAD_CHECK:
+                    check_update(g);
                     break;
                 case GAD_PROMOTE:
                     g->prefs.promote = (gad->Flags & GFLG_SELECTED) ? 1 : 0;

@@ -19,6 +19,8 @@
  *   PROMOTE=ON|OFF              (native-chipset screens open on the board)
  *   PROMOTEPROG=<program>       (promoted even with PROMOTE=OFF)
  *   KEEPPROG=<program>          (left on the chipset even with PROMOTE=ON)
+ *   UPDATES=OFF|GITHUB|MIRROR|BOTH  (where PrismUpdate looks for a newer release)
+ *   MIRROR=https://...          (a mirror's directory: latest.txt and the archive)
  *
  * Promotion: a screen a program opens on a PAL, NTSC or other native
  * monitor (or with no mode at all) is opened instead on the primary
@@ -57,6 +59,9 @@ enum { PB_AUTO, PB_PICASSO2, PB_ZZ9000, PB_P96, PB_UAEGFX, PB_OTHER, PB_COUNT };
 #define PREFS_BOARDNAME 32           /* driver_open's limit on a name       */
 #define PREFS_NPROGS    16           /* promotion exceptions                */
 #define PREFS_PROGNAME  31
+#define PREFS_MIRROR    127
+/* UPDATES=: off, GitHub's releases, a mirror, GitHub then the mirror */
+enum { UPD_OFF, UPD_GITHUB, UPD_MIRROR, UPD_BOTH, UPD_COUNT };
 
 struct PrefsProg {
     char  name[PREFS_PROGNAME + 1];
@@ -81,6 +86,8 @@ struct PrismPrefs {
     UBYTE promote;                   /* PROMOTE=ON: native screens on the board */
     UBYTE nprog;
     struct PrefsProg prog[PREFS_NPROGS];
+    UBYTE updates;                   /* UPD_*: where PrismUpdate looks         */
+    char mirror[PREFS_MIRROR + 1];   /* MIRROR=: an HTTPS directory            */
     char p96card[256];
     char p96monitor[256];
 };

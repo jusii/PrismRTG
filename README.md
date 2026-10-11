@@ -350,6 +350,15 @@ blitter off.
   screen is the mode's size, so a program that draws a 640x256 screen
   edge to edge has a band left over; programs that bring their own bitmap
   (`CUSTOMBITMAP`) or ask for more than 8 planes are left alone.
+* **Update check** ("Updates" in PrismPrefs, `UPDATES=GITHUB|MIRROR|BOTH`,
+  then "Check now"): `C:PrismUpdate` asks GitHub's release API, or a mirror
+  (`MIRROR=https://host/dir/`, a directory with `latest.txt` holding
+  "version archive"), whether a newer release exists, and offers to
+  download it to T: and run its installer, which ends with the usual
+  reboot. Everything goes over HTTPS, so it needs a running TCP/IP stack
+  and AmiSSL 5 (or an SSL offload that answers to the AmiSSL API: the
+  tool keeps to the basic calls). A beta sees pre-releases, a final
+  release only final ones. From a Shell: `PrismUpdate`, `PrismUpdate GET`.
 * **Off unless switched on:** screen dragging (`DRAGGING=ON`) and
   Picasso96 PIP windows go through a compositor that redoes only what
   changed and copies the dragged screen with the card's blitter; a program
