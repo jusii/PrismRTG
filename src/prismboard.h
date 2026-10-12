@@ -57,6 +57,11 @@ struct PrismMode {
     UBYTE format;            /* enum PrismFormat                        */
     UBYTE refresh;           /* Hz, 0 = driver's default                */
     ULONG bytesPerRow;       /* set by the driver in SetMode            */
+    UWORD pitchPixels;       /* 0, or the pixels a row of the displayed
+                                bitmap has: an oversized (autoscroll)
+                                screen is wider than the mode, and the
+                                display must step rows by its pitch. A
+                                driver that cannot refuses in checkMode */
 };
 
 /* Board flags (bits 0-2 and 4 are free; what a board can draw is
@@ -140,6 +145,9 @@ struct PrismBoard {
     void (*cursorImage)(struct PrismBoard *b, const UBYTE *img, const UBYTE *rgb);
     void (*cursorShow)(struct PrismBoard *b, BOOL on);
     void (*cursorMove)(struct PrismBoard *b, WORD x, WORD y);
+    UWORD cursorW, cursorH;          /* the sprite's size (0: the full 64x64);
+                                        a bigger pointer image is drawn by
+                                        PrismD's software pointer instead */
 
     /* Optional bitmap row layout; NULL keeps the default 8-byte alignment.
      * (bytes per pixel only: drivers whose row layout depends on the exact

@@ -363,6 +363,17 @@ blitter off.
   the emulated ZZ9000 and GBAPII++; expect a 68030 to manage small
   windows and an 060 full ones. The ZZ9000's firmware can convert YUV on
   the card (OP_WRITE_YUV); handing it that work is on the backlog.
+* **Pointers up to 64x64.** A pointer image bigger than the board's sprite
+  (the ZZ9000's is 32x48; the Cirrus cursor is 64x64) is drawn by the
+  software pointer instead of being cut, so the large pointers of the OS
+  3.2 preferences, and programs' own through pointerclass, show whole.
+* **Oversized screens with autoscroll.** A screen opened with
+  `SA_AutoScroll` and a size beyond its mode (a 1280x960 Workbench on a
+  640x480 monitor, say) gets a bitmap of that size, and the card shows a
+  mode-sized part of it; Intuition scrolls it when the pointer pushes an
+  edge, as on the chipset. The board must be able to step rows by the
+  larger pitch: the Cirrus family and the ZZ9000 can; a P96 card driver
+  or UAE's native board gets the mode's size instead.
 * **Gamma** ("Gamma" in PrismPrefs, `GAMMA=1.4` in the prefs file, 0.5
   to 2.5): every palette a board is given goes through the curve, so
   256-colour screens and the Test picture brighten (above 1.0) or darken

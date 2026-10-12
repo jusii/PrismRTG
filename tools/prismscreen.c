@@ -33,8 +33,8 @@ struct GfxBase *GfxBase;
 struct IntuitionBase *IntuitionBase;
 struct Library *AslBase;
 
-#define TEMPLATE "LIST/S,MODEID/K,SECS/K/N,REQ/S,QUIT/S,GFX/S,CGX/S,DBUF/S,MANY/S"
-enum { A_LIST, A_MODEID, A_SECS, A_REQ, A_QUIT, A_GFX, A_CGX, A_DBUF, A_MANY, A_COUNT };
+#define TEMPLATE "LIST/S,MODEID/K,SECS/K/N,REQ/S,QUIT/S,GFX/S,CGX/S,DBUF/S,MANY/S,WIDTH/K/N,HEIGHT/K/N,AUTOSCROLL/S"
+enum { A_LIST, A_MODEID, A_SECS, A_REQ, A_QUIT, A_GFX, A_CGX, A_DBUF, A_MANY, A_WIDTH, A_HEIGHT, A_AUTOSCROLL, A_COUNT };
 
 int dbuf_test(ULONG id, ULONG secs);     /* m8tests.c */
 int many_test(ULONG id, ULONG secs);
@@ -198,11 +198,37 @@ int main(void)
         goto out;
     }
     printf("PrismScreen: opening $%08lx\n", (unsigned long)id);
-    s = OpenScreenTags(NULL, SA_DisplayID, id, SA_Depth, 8,
-                       SA_Title, (ULONG)"Prism M1", SA_ShowTitle, FALSE,
-                       SA_Quiet, TRUE, TAG_DONE);
+    {
+        /* WIDTH/HEIGHT/AUTOSCROLL: an oversized screen Intuition scrolls
+         * when the pointer pushes its edge; drawn as a grid of coloured
+         * cells (100 pixels) so a test can see which part is shown */
+        LONG w = args[A_WIDTH] ? *(LONG *)args[A_WIDTH] : 0, h = args[A_HEIGHT] ? *(LONG *)args[A_HEIGHT] : 0;
+        s = OpenScreenTags(NULL, SA_DisplayID, id, SA_Depth, 8,
+                           SA_Title, (ULONG)"Prism M1", SA_ShowTitle, FALSE,
+                           SA_Quiet, TRUE,
+                           w > 0 ? SA_Width : TAG_IGNORE, w,
+                           h > 0 ? SA_Height : TAG_IGNORE, h,
+                           args[A_AUTOSCROLL] ? SA_AutoScroll : TAG_IGNORE, TRUE,
+                           TAG_DONE);
+    }
     if (!s) {
         printf("PrismScreen: OpenScreen failed\n");
+        goto out;
+    }
+    if (args[A_WIDTH] || args[A_HEIGHT]) {
+        LONG cx, cy;
+        printf("PrismScreen: screen %dx%d, view %dx%d\n", s->Width, s->Height,
+               s->ViewPort.DWidth, s->ViewPort.DHeight);
+        make_palette();
+        LoadRGB32(&s->ViewPort, palette);
+        for (cy = 0; cy * 100 < s->Height; cy++)
+            for (cx = 0; cx * 100 < s->Width; cx++) {
+                SetAPen(&s->RastPort, 2 + ((cx + cy * 7) % 120));
+                RectFill(&s->RastPort, cx * 100, cy * 100, cx * 100 + 99, cy * 100 + 99);
+            }
+        Delay(secs * 50);
+        CloseScreen(s);
+        rc = 0;
         goto out;
     }
     if (!ps->screenInfo(s, &si)) {

@@ -232,15 +232,28 @@ static void present_card(void)
     WORD px=posX,py=posY;
     BOOL ptrHere=pointer_is_card(PC);
     ULONG wrow;
+    static struct PBitMap view;          /* an oversized front, as the display shows it */
+    struct PBitMap *real;
+    WORD rx,ry;
     ObtainSemaphore(&lock);
     screen=prism_display_layers(PC,&front,&back,&top,&backTop,&width,&height);
+    real=front;
+    if (front && prism_display_scroll(PC,&rx,&ry) && (rx || ry || front->w>width || front->h>height)) {
+        /* the part scrolled into view, with the real bitmap's pitch: the
+         * compositor reads rows from here (same address each pass) */
+        view=*front;
+        view.pix=front->pix+(ULONG)ry*front->bpr+(ULONG)rx*front->bpp;
+        view.vramOff=front->vramOff+(ULONG)ry*front->bpr+(ULONG)rx*front->bpp;
+        view.w=width;view.h=height;
+        front=&view;
+    }
     if (!prism_dragging()) top=0;
     /* The pointer alone is a software sprite (pointer.c), not a reason
      * to compose; while composing, pointer_compose draws it. */
     if (!screen || (!top && !p96_pip_active(screen))) {
         present_stop(PC); ReleaseSemaphore(&lock); return;
     }
-    if (!prepare(front,width,height)) { ReleaseSemaphore(&lock);return; }
+    if (!prepare(real,width,height)) { ReleaseSemaphore(&lock);return; }   /* identity: the real bitmap */
 
     frame.rgbTab=front->rgbTab;
     showBack=back && (top>0 || (LONG)top+front->h<height);

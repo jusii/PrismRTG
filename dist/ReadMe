@@ -125,6 +125,16 @@ Video layers (overlay)
   window. The card has no overlay engine, so the frames are converted
   and scaled by the CPU: small windows on a 68030, full ones on an 060.
 
+Large pointers
+  A pointer bigger than the board's sprite (the ZZ9000's is 32x48) is
+  drawn by the software pointer, whole, instead of being cut.
+
+Oversized screens
+  A screen opened with autoscroll and a size beyond its mode (ScreenMode's
+  "Autoscroll" with a bigger size, or a program's own) is scrolled by
+  Intuition when the pointer pushes an edge, on the Picasso II family and
+  the ZZ9000.
+
 Gamma
   "Gamma" in PrismPrefs (GAMMA=1.4 in the prefs file): the palette's
   curve for 256-colour screens and the Test picture. Deeper screens are

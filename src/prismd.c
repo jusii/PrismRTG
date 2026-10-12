@@ -222,6 +222,8 @@ struct CardState {
     struct PScreen *shown;              /* screen the card is showing        */
     struct ViewPort *shownVP;
     struct ModeRec *curMode;            /* mode the card is set to           */
+    UWORD curPitch;                     /* pixels a row of the set mode steps by
+                                           (an oversized screen's width)      */
     struct PBitMap *shownPbm;           /* bitmap the card scans out         */
     ULONG showStamp;
     BOOL rtgOn;
@@ -435,6 +437,9 @@ struct PScreen {
     BOOL             painted;       /* 16-bit: background set to pen 0  */
     ULONG            pal32[256][3]; /* colours at full precision (ECS)  */
     UBYTE            palKnown[256];
+    BOOL             autoscroll;     /* bigger than its mode: the display
+                                        shows rx,ry into it (ScrollVPort) */
+    WORD             rx, ry;
 };
 
 /* A screen opened without an explicit SA_DisplayID (Workbench!) gets its
@@ -466,6 +471,60 @@ UBYTE prism_ncards(void)
     return ncards;
 }
 
+/* where the display starts in a bitmap: an oversized screen's scroll */
+static ULONG scrolled_start(struct PBitMap *p)
+{
+    struct PScreen *ps = p->owner;
+    if (ps && ps->autoscroll)
+        return p->vramOff + (ULONG)ps->ry * p->bpr + (ULONG)ps->rx * p->bpp;
+    return p->vramOff;
+}
+
+/* An oversized screen follows the pointer: the displayed part moves so the
+ * pointer stays inside it, as Intuition's autoscroll would (which never
+ * engages here: the ViewPort it opened is the whole bitmap, so it sees
+ * nothing to scroll). Lock held. TRUE when the display moved. */
+BOOL prism_autoscroll(struct PrismCard *c, WORD mx, WORD my)
+{
+    struct CardState *cs = &cst[c->index];
+    struct PScreen *ps = cs->shown;
+    LONG rx, ry, maxx, maxy, w, h;
+    if (!ps || !ps->autoscroll || !cs->shownPbm || !cs->curMode)
+        return FALSE;
+    w = cs->curMode->m.width;
+    h = cs->curMode->m.height;
+    rx = ps->rx;
+    ry = ps->ry;
+    maxx = (LONG)ps->pbm->w - w;
+    maxy = (LONG)ps->pbm->h - h;
+    if (mx >= rx + w) rx = mx - w + 1;
+    if (mx < rx) rx = mx;
+    if (my >= ry + h) ry = my - h + 1;
+    if (my < ry) ry = my;
+    if (rx < 0) rx = 0;
+    if (ry < 0) ry = 0;
+    if (rx > maxx) rx = maxx < 0 ? 0 : maxx;
+    if (ry > maxy) ry = maxy < 0 ? 0 : maxy;
+    if (rx == ps->rx && ry == ps->ry)
+        return FALSE;
+    ps->rx = rx;
+    ps->ry = ry;
+    cs->shownPbm->bd->setDisplayStart(cs->shownPbm->bd, scrolled_start(cs->shownPbm));
+    present_invalidate(c);               /* a composed frame shows another part now */
+    return TRUE;
+}
+
+BOOL prism_display_scroll(struct PrismCard *c, WORD *rx, WORD *ry)
+{
+    struct PScreen *ps = cst[c->index].shown;
+    *rx = *ry = 0;
+    if (!ps || !ps->autoscroll)
+        return FALSE;
+    *rx = ps->rx;
+    *ry = ps->ry;
+    return TRUE;
+}
+
 /* Point the card at a bitmap, paging it into VRAM first. Lock held. */
 static BOOL show_pbm(struct PBitMap *p)
 {
@@ -477,7 +536,7 @@ static BOOL show_pbm(struct PBitMap *p)
         return FALSE;
     }
     if (!pbm_upload(p)) return FALSE;
-    p->bd->setDisplayStart(p->bd, p->vramOff);
+    p->bd->setDisplayStart(p->bd, scrolled_start(p));
     cs->shownPbm = p;
     p->lastShown = ++cs->showStamp;
     return TRUE;
@@ -719,10 +778,12 @@ static BOOL show_card(UBYTE k)
         return FALSE;
     if (ps) {
         struct PBitMap *dp = ps->front ? ps->front : ps->pbm;
+        UWORD pitch = ps->autoscroll ? dp->bpr / dp->bpp : 0;
         BOOL changed = FALSE;
-        if (cs->curMode != ps->mode) {
+        if (cs->curMode != ps->mode || cs->curPitch != pitch) {
             present_stop(c);
             struct PrismMode m = ps->mode->m;
+            m.pitchPixels = pitch;
             /* Rebuilding the pool releases the old scanout allocation. */
             if ((B->flags & PBF_REINIT) && cs->rtgOn) {
                 B->setSwitch(B, FALSE);
@@ -738,6 +799,7 @@ static BOOL show_card(UBYTE k)
                 return TRUE;
             }
             cs->curMode = ps->mode;
+            cs->curPitch = pitch;
             cs->shown = NULL;
         }
         if (cs->shown != ps || cs->shownPbm != dp)
@@ -803,7 +865,7 @@ static void update_display(void)
 static APTR o_NextDisplayInfo, o_FindDisplayInfo, o_GetDisplayInfoData,
             o_ModeNotAvailable, o_OpenMonitor, o_CloseMonitor, o_MakeVPort,
             o_MrgCop, o_LoadView, o_SetRGB32, o_LoadRGB32, o_SetRGB4,
-            o_LoadRGB4, o_OpenScreenTagList, o_OpenScreen, o_CloseScreen,
+            o_LoadRGB4, o_OpenScreenTagList, o_OpenScreen, o_CloseScreen, o_ScrollVPort,
             o_DisplayAlert, o_TimedDisplayAlert, o_Alert;
 
 #define BASE(b) register APTR _a6 __asm("a6") = (b)
@@ -1428,7 +1490,8 @@ static struct Screen *open_prism_screen(struct ModeRec *mr, struct NewScreen *ns
     struct TagItem newTags[7], *clone = NULL, *extClone = NULL;
     struct PScreen *ps;
     struct Screen *s;
-    ULONG w = mr->m.width, h = mr->m.height, depth;
+    ULONG w = mr->m.width, h = mr->m.height, depth, rw, rh;
+    BOOL big = FALSE;
 
     BOOL viaHook;
 
@@ -1436,26 +1499,49 @@ static struct Screen *open_prism_screen(struct ModeRec *mr, struct NewScreen *ns
     if (depth < 1) depth = 1;
     if (depth > mr->maxDepth) depth = mr->maxDepth;
 
+    /* An oversized screen (SA_AutoScroll, wider or taller than the mode):
+     * the bitmap is the size asked for and the display shows a mode-sized
+     * part of it, scrolled by Intuition through ScrollVPort. Only where the
+     * driver can step rows by the bitmap's pitch; else the mode's size. */
+    rw = tag_data(tags, ext, SA_Width, ns ? (ULONG)(WORD)ns->Width : (ULONG)STDSCREENWIDTH);
+    rh = tag_data(tags, ext, SA_Height, ns ? (ULONG)(WORD)ns->Height : (ULONG)STDSCREENHEIGHT);
+    if (tag_data(tags, ext, SA_AutoScroll, FALSE) && (LONG)rw > 0 && (LONG)rh > 0 &&
+        rw <= 4096 && rh <= 4096 && (rw > w || rh > h)) {
+        struct PrismMode m = mr->m;
+        if (rw < w) rw = w;
+        if (rh < h) rh = h;
+        rw = (rw + 7) & ~7UL;
+        m.pitchPixels = rw;
+        if (mr->card->b->checkMode(mr->card->b, &m)) {
+            big = TRUE;
+            w = rw;
+            h = rh;
+            dbg("open: oversized %lux%lu on %s (autoscroll)\n", w, h, mr->name);
+        }
+    }
+
     /* Preferred: Intuition allocates the screen's bitmap itself and the
      * AllocBitMap hook hands it ours (as for Workbench), so the screen is an
      * ordinary one - not CUSTOMBITMAP, which AllocScreenBuffer() refuses.
      * If another open is being watched, fall back to SA_BitMap. */
-    if ((viaHook = pending_begin())) {
+    if (!big && (viaHook = pending_begin())) {
         pending.mr = mr;
         ps = NULL;
         goto tags;
     }
+    viaHook = FALSE;
 
     if (!(ps = AllocVec(sizeof(*ps), MEMF_PUBLIC | MEMF_CLEAR)))
         return NULL;
     ps->mode = mr;
     ps->depth = depth;
+    ps->autoscroll = big;
 
     /* the screen's chunky bitmap, cleared, in VRAM if it fits (else fast
      * RAM until it is shown); its row size must be the mode's (modes are
-     * multiples of 8 pixels wide, so it is) */
+     * multiples of 8 pixels wide, so it is) - an oversized one has its own */
     if (!(ps->pbm = pbm_new(mr->card, w, h, depth, mr->m.format, mr->bpp == 2 ? ps->penTab : NULL,
-                            TRUE, TRUE)) || ps->pbm->bpr != mr->m.bytesPerRow) {
+                            TRUE, TRUE)) || (!big && ps->pbm->bpr != mr->m.bytesPerRow)) {
         dbg("open: no memory for %lux%lu\n", w, h);
         pbm_free(ps->pbm);
         FreeVec(ps);
@@ -1473,8 +1559,13 @@ static struct Screen *open_prism_screen(struct ModeRec *mr, struct NewScreen *ns
     /* Our size/depth/bitmap win; everything else the caller asked for
      * passes through. */
 tags:
-    if (tags && (clone = CloneTagItems(tags)))
+    if (tags && (clone = CloneTagItems(tags))) {
         FilterTagItems(clone, filterOut, TAGFILTER_NOT);
+        if (big) {
+            struct TagItem *ti = FindTagItem(TAG_IGNORE, clone);   /* a filtered slot */
+            if (ti) { ti->ti_Tag = SA_AutoScroll; ti->ti_Data = TRUE; }
+        }
+    }
     if (ns) {
         memset(&ens, 0, sizeof(ens));
         CopyMem(ns, &ens, (ns->Type & NS_EXTENDED) ? sizeof(struct ExtNewScreen)
@@ -1644,6 +1735,30 @@ static struct Screen *P_OpenScreenTagList(struct NewScreen *ns __asm("a0"),
     }
     LEAVE();
     return s;
+}
+
+/* ScrollVPort(vp a0): Intuition's autoscroll moved an oversized Prism
+ * screen's RasInfo offsets - show that part. Other ViewPorts go on to
+ * graphics. */
+static void P_ScrollVPort(struct ViewPort *vp __asm("a0"))
+{
+    struct PScreen *ps;
+    ENTER();
+    LOCK();
+    ps = ps_by_vp(vp);
+    if (ps && ps->autoscroll) {
+        /* PrismD scrolls it from the pointer (prism_autoscroll); graphics
+         * would rebuild a native view for it */
+        struct CardState *cs = &cst[ps->mode->card->index];
+        if (cs->shown == ps && cs->shownPbm)
+            cs->shownPbm->bd->setDisplayStart(cs->shownPbm->bd, scrolled_start(cs->shownPbm));
+        ReleaseSemaphore(&lock);
+        LEAVE();
+        return;
+    }
+    ReleaseSemaphore(&lock);
+    c_a0(o_ScrollVPort, GfxBase, vp);
+    LEAVE();
 }
 
 static struct Screen *P_OpenScreen(struct NewScreen *ns __asm("a0"))
@@ -2232,6 +2347,7 @@ static struct Patch patches[] = {
     { (struct Library **)&GfxBase, -0x0c0, (APTR)P_LoadRGB4,           &o_LoadRGB4 },
     { (struct Library **)&IntuitionBase, -0x264, (APTR)P_OpenScreenTagList, &o_OpenScreenTagList },
     { (struct Library **)&IntuitionBase, -0x0c6, (APTR)P_OpenScreen,   &o_OpenScreen },
+    { (struct Library **)&GfxBase,       -0x24c, (APTR)P_ScrollVPort,  &o_ScrollVPort },
     { (struct Library **)&IntuitionBase, -0x042, (APTR)P_CloseScreen,  &o_CloseScreen },
     { (struct Library **)&IntuitionBase, -0x05a, (APTR)P_DisplayAlert, &o_DisplayAlert },
     { (struct Library **)&SysBase, -0x06c, (APTR)P_Alert, &o_Alert },

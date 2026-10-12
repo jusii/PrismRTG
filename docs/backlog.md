@@ -4,7 +4,7 @@ Features an RTG system is expected to have that PrismRTG does not yet,
 roughly in the order users ask for them. Kept here so nothing is
 forgotten; none of these is promised for a given release.
 
-In progress (2026-10-11), in this order: the mode editor (2), video overlay (1), then gamma (4), oversized screens (5) and larger pointers (6).
+Done 2026-10-11: the mode editor (2), video overlay (1), gamma (4), oversized screens with autoscroll (5), larger pointers (6).
 
 1. **Video overlay.** A YUV window with colour keying through
    cgxvideo.library and the Picasso96 PIP calls with YUV formats, for

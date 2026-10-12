@@ -24,6 +24,8 @@ static WORD hardwareY;
 static BOOL overlay,backOverlay,failWrite;
 static BOOL dragEnabled=TRUE,forceSoftware;
 BOOL prism_dragging(void) { return dragEnabled; }
+BOOL prism_display_scroll(struct PrismCard *c, WORD *rx, WORD *ry) { *rx = *ry = 0; return FALSE; }
+BOOL prism_autoscroll(struct PrismCard *c, WORD mx, WORD my) { return FALSE; }
 BOOL prism_software_pointer(void) { return forceSoftware; }
 void dbg(const char *fmt,...) { (void)fmt; }
 LONG call_regs(APTR fn,struct Regs *r) { (void)fn;(void)r;return 0; }

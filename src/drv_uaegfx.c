@@ -80,6 +80,7 @@ static BOOL uae_check(struct PrismBoard *b, struct PrismMode *m)
     struct UAEPriv *p = b->priv;
     UBYTE bpp, type;
     if (m->format >= PF_COUNT || (m->refresh && m->refresh != 60)) return FALSE;
+    if (m->pitchPixels && m->pitchPixels != m->width) return FALSE;   /* no oversized screens here */
     bpp = bytes(m->format);
     if (p->pf[bpp] != m->format) return FALSE;
     type = bpp == 1 ? CHUNKY : bpp == 2 ? HICOLOR : bpp == 3 ? TRUECOLOR : TRUEALPHA;

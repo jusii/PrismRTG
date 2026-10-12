@@ -414,7 +414,10 @@ static const struct P2Timing *p2_check(struct PrismBoard *b, struct PrismMode *m
     }
     if (t->khz > max_khz(p, bpp) || (t->dbl && bpp == 3))
         return NULL;                 /* (low resolution at 24 bits: untried) */
-    m->bytesPerRow = (ULONG)m->width * bpp;
+    /* an oversized (autoscroll) screen: the CRTC steps rows by its pitch */
+    if (m->pitchPixels && (m->pitchPixels < m->width || (m->pitchPixels * bpp) >= 0x1000 * 8))
+        return NULL;                 /* CR13/CR1B: 9 bits of 8-byte units */
+    m->bytesPerRow = (ULONG)(m->pitchPixels ? m->pitchPixels : m->width) * bpp;
     if ((ULONG)m->bytesPerRow * m->height > b->vramSize)
         return NULL;
     m->refresh = t->hz;
@@ -1493,6 +1496,8 @@ BOOL Picasso2_Probe(struct PrismBoard *b)
     b->setMode         = p2_SetMode;
     b->checkMode       = p2_CheckMode;
     b->setDisplayStart = p2_SetDisplayStart;
+    b->cursorW         = CURSOR_SIZE;     /* the Cirrus cursor is 64x64 */
+    b->cursorH         = CURSOR_SIZE;
     b->setPalette      = p2_SetPalette;
     b->setSwitch       = p2_SetSwitch;
     b->waitVBlank      = p2_WaitVBlank;

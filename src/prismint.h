@@ -330,6 +330,10 @@ void present_tick(void);
 BOOL present_ready(struct PrismCard *c);
 BOOL prism_dragging(void);
 BOOL prism_any_shadow(void);           /* a board with PBF_SHADOW is driven */
+/* an oversized (autoscroll) screen on the card: how far it is scrolled */
+BOOL prism_display_scroll(struct PrismCard *c, WORD *rx, WORD *ry);
+/* scroll it so the pointer (screen coordinates) stays in view; lock held */
+BOOL prism_autoscroll(struct PrismCard *c, WORD mx, WORD my);
 BOOL prism_software_pointer(void);
 void present_stop(struct PrismCard *c);
 void present_invalidate(struct PrismCard *c);   /* compose card c's frame afresh */

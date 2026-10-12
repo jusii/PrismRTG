@@ -72,6 +72,7 @@ $CC $CFLAGS -s -o out/trapwatch tools/trapwatch.c
 $CC $CFLAGS -s -o out/tmpltest tools/tmpltest.c
 $CC $CFLAGS -s -o out/vlayertest tools/vlayertest.c tools/cgxvideo_stubs.S
 $CC $CFLAGS -s -o out/vrampeek tools/vrampeek.c
+$CC $CFLAGS -s -o out/bigpointer tools/bigpointer.c
 $CC $CFLAGS -s -o out/movebench tools/movebench.c
 $CC $CFLAGS -s -o out/dragcheck tools/dragcheck.c
 $CC $CFLAGS -DSCRMOVE -s -o out/scrmove tools/dragcheck.c

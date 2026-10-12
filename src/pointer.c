@@ -98,20 +98,28 @@ static void load_colours(struct ViewPort *vp)
         colours[i] = t[i] >> 24;
 }
 
+/* does the image fit the board's sprite? (a 64x64 pointer on a ZZ9000,
+ * whose sprite is 32x48, is drawn by the software pointer instead) */
+static BOOL image_fits(void)
+{
+    return (!PB->cursorW || imgW <= PB->cursorW) && (!PB->cursorH || imgH <= PB->cursorH);
+}
+
 static BOOL pointer_software(void)
 {
     struct PBitMap *front,*back; WORD top,backTop; UWORD w,h;
     if (!on) return FALSE;
     prism_display_layers(ptrCard,&front,&back,&top,&backTop,&w,&h);
     return prism_software_pointer() || (prism_dragging() && top) || !(PB->flags & PBF_HW_CURSOR) ||
-        !PB->cursorImage || !PB->cursorShow || !PB->cursorMove;
+        !PB->cursorImage || !PB->cursorShow || !PB->cursorMove || !image_fits();
 }
-/* The board's cursor, unless PrismPrefs asks for the software pointer or
- * a composed frame (dragging, PIPs) carries the pointer. */
+/* The board's cursor, unless PrismPrefs asks for the software pointer, the
+ * image is bigger than the sprite, or a composed frame (dragging, PIPs)
+ * carries the pointer. */
 static BOOL hardware_pointer(void)
 {
     return (PB->flags & PBF_HW_CURSOR) && PB->cursorImage &&
-        PB->cursorShow && PB->cursorMove && !prism_software_pointer() &&
+        PB->cursorShow && PB->cursorMove && !prism_software_pointer() && image_fits() &&
         (!pointer_software() || !present_ready(ptrCard));
 }
 
@@ -273,11 +281,17 @@ static void shown_origin(WORD *ox, WORD *oy)
     struct Screen *s;
     *ox = *oy = 0;
     if ((s = prism_display_layers(ptrCard, &f, &b, &top, &bt, &w, &h))) {
+        WORD rx, ry;
         *ox = s->LeftEdge;
         /* a composed frame with dragging on has the screen at its TopEdge
          * already; with dragging off (a PIP) it is composed at row 0 */
         if (!(present_ready(ptrCard) && prism_dragging()))
             *oy = s->TopEdge;
+        /* an oversized screen: the display starts rx,ry into it */
+        if (prism_display_scroll(ptrCard, &rx, &ry)) {
+            *ox += rx;
+            *oy += ry;
+        }
     }
 }
 
@@ -370,6 +384,8 @@ void pointer_tick(void)
 {
     /* the lock first: pointer_software() looks at the screens */
     ObtainSemaphore(&lock);
+    if (on && prism_autoscroll(ptrCard, posX, posY))   /* an oversized screen follows the pointer */
+        dirtyPos = TRUE;
     if ((on && (dirtyPos || dirtyImage || pointer_software())) || swOn) {
         if (on && haveImage) {
             apply();

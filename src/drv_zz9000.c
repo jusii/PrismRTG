@@ -482,7 +482,9 @@ static LONG zz_check(struct PrismMode *m, UBYTE *cmOut)
     }
     if ((id = zz_mode_id(ow, oh)) < 0)
         return -1;
-    m->bytesPerRow = (ULONG)m->width * bpp;
+    if (m->pitchPixels && (m->pitchPixels < m->width || m->pitchPixels > 8192))
+        return -1;
+    m->bytesPerRow = (ULONG)(m->pitchPixels ? m->pitchPixels : m->width) * bpp;
     *cmOut = cm;
     return id | (cm << 8) | (scale << 12);
 }
@@ -502,7 +504,7 @@ static BOOL zz_SetMode(struct PrismBoard *b, struct PrismMode *m)
     if ((mode = zz_check(m, &cm)) < 0)
         return FALSE;
     p->mode = mode;
-    p->width = m->width;
+    p->width = m->pitchPixels ? m->pitchPixels : m->width;   /* the pan width: the row's pixels */
     p->colormode = cm;
 
     W16(b, REG_CAPTURE, 0);
@@ -655,6 +657,8 @@ BOOL ZZ9000_Probe(struct PrismBoard *b)
     b->checkMode       = zz_CheckMode;
     b->setDisplayStart = zz_SetDisplayStart;
     b->setPalette      = zz_SetPalette;
+    b->cursorW         = ZZ_CURSOR_W;     /* a bigger pointer goes to the software one */
+    b->cursorH         = ZZ_CURSOR_H;
     b->setSwitch       = zz_SetSwitch;
     b->waitVBlank      = zz_WaitVBlank;
     b->shutdown        = zz_Shutdown;

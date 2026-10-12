@@ -335,6 +335,7 @@ static BOOL mode_info(struct P96Priv *p, struct PrismMode *m, struct ModeInfo *m
     UBYTE nominal = 0;
     ULONG i;
     if (m->format >= PF_COUNT) return FALSE;
+    if (m->pitchPixels && m->pitchPixels != m->width) return FALSE;   /* no oversized screens here */
     bpp = rgb_bpp(rgbformat[m->format]);
     if (!bpp || !(p->formats & PF_BIT(m->format))) return FALSE;
     type = mode_type(bpp);
