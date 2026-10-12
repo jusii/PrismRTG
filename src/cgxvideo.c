@@ -154,8 +154,15 @@ static struct VLayer *V_CreateVLayerHandleTagList(struct Screen *screen __asm("a
     e = VOERR_NOMEMORY;
     if (!(v = AllocVec(sizeof(*v), MEMF_PUBLIC | MEMF_CLEAR)))
         goto fail;
-    /* two YUV pixels share a longword: an odd width gets a spare column */
-    if (!(v->source = pbm_new(sp->card, (w + 1) & ~1, h, 8, fmt, NULL, FALSE, TRUE))) {
+    /* two YUV pixels share a longword: an odd width gets a spare column.
+     * Where the board can show the layer itself (overlaySet, a YUV format
+     * it takes, a 16- or 32-bit screen) the frames go into its VRAM; else,
+     * or when VRAM is short, fast RAM and the compositor */
+    v->source = NULL;
+    if (prism_hw_overlay() && sp->bd->overlaySet && (sp->bpp == 2 || sp->bpp == 4) &&
+        PF_IS_YUV(fmt) && fmt != PF_YUV_YUYV)
+        v->source = pbm_new(sp->card, (w + 1) & ~1, h, 8, fmt, NULL, TRUE, TRUE);
+    if (!v->source && !(v->source = pbm_new(sp->card, (w + 1) & ~1, h, 8, fmt, NULL, FALSE, TRUE))) {
         FreeVec(v);
         goto fail;
     }
@@ -208,7 +215,7 @@ static ULONG V_AttachVLayerTagList(struct VLayer *v __asm("a0"), struct Window *
     vl_detach(v);
     memset(v->indent, 0, sizeof(v->indent));
     vl_indents(v, tags);
-    if (!(v->pip = p96_pip_attach(w, v->source, v->w, v->h, v->indent[0], v->indent[1], v->indent[2], v->indent[3])))
+    if (!(v->pip = p96_pip_attach(w, v->source, v->w, v->h, v->indent[0], v->indent[1], v->indent[2], v->indent[3], v->keyPen)))
         return 1;
     v->window = w;
     return 0;

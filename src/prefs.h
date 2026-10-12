@@ -23,6 +23,8 @@
  *   PROMOTE=ON|OFF              (native-chipset screens open on the board)
  *   PROMOTEPROG=<program>       (promoted even with PROMOTE=OFF)
  *   KEEPPROG=<program>          (left on the chipset even with PROMOTE=ON)
+ *   HWOVERLAY=ON|OFF            (video layers on the board's own overlay where
+ *                                it has one - the ZZ9000; OFF: composed on the CPU)
  *   GAMMA=1.4                   (0.5 to 2.5, 1.0 = off: the curve the board's
  *                                palette is loaded through; 256-colour
  *                                screens and the Test picture, since the
@@ -98,6 +100,8 @@ struct PrismPrefs {
     UBYTE nprog;
     struct PrefsProg prog[PREFS_NPROGS];
     UBYTE gamma;                     /* GAMMA= in tenths: 10 = 1.0 (off), 5..25 */
+    UBYTE hwOverlay;                 /* HWOVERLAY=ON: video layers on the board's
+                                        own overlay where it has one (ZZ9000) */
     UBYTE updates;                   /* UPD_*: where PrismUpdate looks         */
     char mirror[PREFS_MIRROR + 1];   /* MIRROR=: an HTTPS directory            */
     char p96card[256];

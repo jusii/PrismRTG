@@ -354,12 +354,16 @@ blitter off.
 * **Video layers (overlay)** for video players: PrismD carries its own
   cgxvideo.library (CreateVLayerHandle, AttachVLayer, LockVLayer and the
   rest, V42), and the Picasso96 PIP calls take the YUV 4:2:2 formats.
-  None of the supported cards has an overlay engine we drive, so the
-  player's frames (YCbCr 4:2:2, YUV 4:2:2, or 15/16-bit RGB) are
-  converted on the CPU and scaled into the window by the compositor every
-  tick, ahead of a software pointer. Colour keying is answered with a pen
-  but not needed: the layer's area is drawn over whatever the player
-  painted. Tested with FroggerNG (`DISPLAY=VLAYER` and `DISPLAY=P96`) on
+  On a ZZ9000 with the BlitterStudio firmware (2.8 and later) a layer with
+  a colour key, in one of the firmware's YUV formats, on a 16- or 32-bit
+  screen is shown by the board itself, scaled at scan-out, and costs the
+  CPU nothing (`HWOVERLAY=OFF` in the prefs, "Video on board" in
+  PrismPrefs, turns that off). Everywhere else the player's frames (YCbCr
+  4:2:2, YUV 4:2:2, or 15/16-bit RGB) are converted on the CPU and scaled
+  into the window by the compositor every tick, ahead of a software
+  pointer; there colour keying is answered with a pen but not needed, the
+  layer's area is drawn over whatever the player painted. Tested with
+  FroggerNG (`DISPLAY=VLAYER` and `DISPLAY=P96`) on
   the emulated ZZ9000 and GBAPII++; expect a 68030 to manage small
   windows and an 060 full ones. The ZZ9000's firmware can convert YUV on
   the card (OP_WRITE_YUV); handing it that work is on the backlog.

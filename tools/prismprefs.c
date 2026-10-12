@@ -36,7 +36,7 @@ static const char version[] __attribute__((used)) = "$VER: PrismPrefs " PRISM_RE
 
 enum { GAD_LIST = 1, GAD_ON, GAD_HZ, GAD_BOARD, GAD_BLIT, GAD_LOG,
        GAD_SAVE, GAD_USE, GAD_DEFAULTS, GAD_CANCEL, GAD_STATUS, GAD_TEST, GAD_BGR,
-       GAD_DRAG, GAD_SOFTPTR, GAD_PROMOTE, GAD_PLIST, GAD_PROG, GAD_PADD, GAD_PKEEP, GAD_PDEL,
+       GAD_DRAG, GAD_SOFTPTR, GAD_HWOVL, GAD_PROMOTE, GAD_PLIST, GAD_PROG, GAD_PADD, GAD_PKEEP, GAD_PDEL,
        GAD_UPDATES, GAD_CHECK, GAD_W, GAD_H, GAD_SETSIZE, GAD_GAMMA };
 
 static STRPTR hzLabels[] = { "Default", "60 Hz", "70 Hz", "72 Hz", "75 Hz", NULL };
@@ -69,7 +69,7 @@ struct Gui {
     struct Screen *scr;
     APTR vi;
     struct Window *win;
-    struct Gadget *glist, *gList, *gOn, *gHz, *gBoard, *gBlit, *gLog, *gBgr, *gDrag, *gSoft, *gStatus;
+    struct Gadget *glist, *gList, *gOn, *gHz, *gBoard, *gBlit, *gLog, *gBgr, *gDrag, *gSoft, *gHwOvl, *gStatus;
     struct Gadget *gPromote, *gPList, *gProg, *gUpdates, *gW, *gH, *gSet, *gGamma;
     struct List modes;
     struct Node node[PREFS_NMODES];
@@ -245,6 +245,7 @@ static void show_settings(struct Gui *g)
     GT_SetGadgetAttrs(g->gBgr, g->win, NULL, GTCB_Checked, (ULONG)p->clutBGR, TAG_END);
     GT_SetGadgetAttrs(g->gDrag, g->win, NULL, GTCB_Checked, (ULONG)p->dragging, TAG_END);
     GT_SetGadgetAttrs(g->gSoft, g->win, NULL, GTCB_Checked, (ULONG)p->softwarePointer, TAG_END);
+    GT_SetGadgetAttrs(g->gHwOvl, g->win, NULL, GTCB_Checked, (ULONG)p->hwOverlay, TAG_END);
     GT_SetGadgetAttrs(g->gPromote, g->win, NULL, GTCB_Checked, (ULONG)p->promote, TAG_END);
     GT_SetGadgetAttrs(g->gUpdates, g->win, NULL, GTCY_Active, (ULONG)(p->updates < UPD_COUNT ? p->updates : 0), TAG_END);
     GT_SetGadgetAttrs(g->gGamma, g->win, NULL, GTCY_Active, (ULONG)gamma_index(p->gamma), TAG_END);
@@ -519,6 +520,13 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     gad = g->gSoft = CreateGadget(CHECKBOX_KIND, gad, &ng, GTCB_Scaled, TRUE,
                                   GTCB_Checked, (ULONG)g->prefs.softwarePointer, TAG_END);
 
+    /* video layers on the board's own overlay (HWOVERLAY=; the ZZ9000) */
+    y += row;
+    ng.ng_TopEdge = y;
+    ng.ng_GadgetText = "Video on board"; ng.ng_GadgetID = GAD_HWOVL;
+    gad = g->gHwOvl = CreateGadget(CHECKBOX_KIND, gad, &ng, GTCB_Scaled, TRUE,
+                                   GTCB_Checked, (ULONG)g->prefs.hwOverlay, TAG_END);
+
     /* screen mode promotion (PROMOTE=), its exceptions are the list below */
     y += row;
     ng.ng_TopEdge = y;
@@ -725,6 +733,12 @@ static void event_loop(struct Gui *g)
                     set_status(g, g->prefs.softwarePointer
                                   ? "Pointer drawn by PrismRTG (for boards without one)"
                                   : "Board's own pointer where it has one");
+                    break;
+                case GAD_HWOVL:
+                    g->prefs.hwOverlay = (gad->Flags & GFLG_SELECTED) ? 1 : 0;
+                    set_status(g, g->prefs.hwOverlay
+                                  ? "Video layers shown by the board where it can (ZZ9000)"
+                                  : "Video layers composed by PrismRTG on the CPU");
                     break;
                 case GAD_UPDATES:
                     g->prefs.updates = code < UPD_COUNT ? code : UPD_OFF;

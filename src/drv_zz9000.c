@@ -80,6 +80,7 @@ extern struct ExpansionBase *ExpansionBase;
 #define OP_SPRITE_XY    11
 #define OP_SPRITE_CLUT  14            /* cursor image, one byte per pixel    */
 #define OP_SET_PALETTE  17
+#define OP_VIDEO_OVERLAY 19           /* BlitterStudio firmware 2.8+: see zz_OverlaySet */
 
 #define MINTERM_SRC     12            /* firmware enum value: plain copy     */
 #define ZZ_CURSOR_W     32            /* the firmware cursor is 32x48        */
@@ -404,6 +405,77 @@ static void zz_CursorShow(struct PrismBoard *b, BOOL on)
     W16(b, REG_SPRITE_SHOW, on ? 1 : 2);
 }
 
+/* ---- video overlay (firmware OP_VIDEO_OVERLAY, BlitterStudio 2.8+) ------
+ * The mailbox carries: offset[1] the YUV source in VRAM, pitch[1] its row,
+ * x[2]/y[2] its size, x[0],y[0],x[1],y[1] the destination rectangle,
+ * user[0] flags (1 colour key on, 2 active), u8_user[4] the YUV variant,
+ * u8_user[5] the sub-command (0 set, 1 off) and u32_user[1] the key,
+ * which the firmware reads raw (little-endian) and compares with the
+ * screen's pixels as they lie in memory: the key bytes go in as stored,
+ * right-aligned in the field. The firmware answers in u32_user[0]
+ * (0 = ok); a firmware without the op leaves our sentinel there. */
+#define GD_X2V       20
+#define GD_Y2V       28
+#define GD_U8_YUV    52
+#define GD_U8_SUBCMD 53
+#define GD_U32_0     60
+#define GD_U32_1     64
+#define GDR32(p, off) (*(volatile ULONG *)((p)->gfxdata + (off)))
+
+static BOOL zz_OverlaySet(struct PrismBoard *b, const struct PrismOverlay *o)
+{
+    struct ZZPriv *p = b->priv;
+    UBYTE variant;
+    ULONG status;
+    switch (o->srcFormat) {
+    case PF_YUV_CGX:    variant = 0; break;
+    case PF_YUV_P96:    variant = 1; break;
+    case PF_YUV_P96PC:  variant = 2; break;
+    case PF_YUV_P96PA:  variant = 3; break;
+    case PF_YUV_P96PAPC: variant = 4; break;
+    default: return FALSE;
+    }
+    if (o->screenBpp != 2 && o->screenBpp != 4)
+        return FALSE;
+    Forbid();
+    GD32(p, GD_OFFSET1, o->srcOff);
+    GD16(p, GD_PITCH1, o->srcPitch);
+    GD16(p, GD_X2V, o->srcW);
+    GD16(p, GD_Y2V, o->srcH);
+    GD16(p, GD_X0, o->dstX);
+    GD16(p, GD_Y0, o->dstY);
+    GD16(p, GD_X1, o->dstW);
+    GD16(p, GD_Y1, o->dstH);
+    GD16(p, GD_USER0, (o->keyed ? 1 : 0) | 2);
+    GD8(p, GD_U8_YUV, variant);
+    GD8(p, GD_U8_SUBCMD, 0);
+    GD32(p, GD_U32_0, 0xFFFFFFFFUL);              /* the sentinel: no answer */
+    GD32(p, GD_U32_1, 0);
+    if (o->screenBpp == 4) {
+        GD8(p, GD_U32_1 + 0, o->key[0]); GD8(p, GD_U32_1 + 1, o->key[1]);
+        GD8(p, GD_U32_1 + 2, o->key[2]); GD8(p, GD_U32_1 + 3, o->key[3]);
+    } else {
+        GD8(p, GD_U32_1 + 2, o->key[0]); GD8(p, GD_U32_1 + 3, o->key[1]);
+    }
+    z3_kick(b, OP_VIDEO_OVERLAY);
+    (void)R16(b, REG_DMA_OP);                      /* synchronous: a fence */
+    CacheClearU();
+    status = GDR32(p, GD_U32_0);
+    Permit();
+    return status == 0;                           /* else: refused, or no such op (sentinel) */
+}
+
+static void zz_OverlayOff(struct PrismBoard *b)
+{
+    struct ZZPriv *p = b->priv;
+    Forbid();
+    GD8(p, GD_U8_SUBCMD, 1);
+    GD32(p, GD_U32_0, 0xFFFFFFFFUL);
+    z3_kick(b, OP_VIDEO_OVERLAY);
+    (void)R16(b, REG_DMA_OP);
+    Permit();
+}
+
 static void zz_CursorMove(struct PrismBoard *b, WORD x, WORD y)
 {
     struct ZZPriv *p = b->priv;
@@ -657,6 +729,8 @@ BOOL ZZ9000_Probe(struct PrismBoard *b)
     b->checkMode       = zz_CheckMode;
     b->setDisplayStart = zz_SetDisplayStart;
     b->setPalette      = zz_SetPalette;
+    b->overlaySet      = zz_OverlaySet;   /* refused by a firmware without the op */
+    b->overlayOff      = zz_OverlayOff;
     b->cursorW         = ZZ_CURSOR_W;     /* a bigger pointer goes to the software one */
     b->cursorH         = ZZ_CURSOR_H;
     b->setSwitch       = zz_SetSwitch;

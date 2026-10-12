@@ -83,6 +83,7 @@ unsigned long *__BUFSIZE = &stdioBufSize;
 static struct PrismPrefs prefs;
 
 BOOL prism_dragging(void) { return prefs.dragging; }
+BOOL prism_hw_overlay(void) { return prefs.hwOverlay; }
 /* does any board go through a shadow copy (PBF_SHADOW)? */
 BOOL prism_any_shadow(void)
 {
@@ -2879,6 +2880,7 @@ int main(void)
             pbm_flush_shown();
             present_tick();
             pointer_tick();
+            p96_pip_hw_tick();            /* layers on a board's overlay follow their windows */
             if (prefs.log || ++tick % 25 == 0)
                 dbg_flush();
         }

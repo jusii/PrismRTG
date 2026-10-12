@@ -329,6 +329,7 @@ void pointer_compose(struct PBitMap *, WORD);
 void present_tick(void);
 BOOL present_ready(struct PrismCard *c);
 BOOL prism_dragging(void);
+BOOL prism_hw_overlay(void);             /* HWOVERLAY= (prefs): layers on the board's overlay */
 BOOL prism_any_shadow(void);           /* a board with PBF_SHADOW is driven */
 /* an oversized (autoscroll) screen on the card: how far it is scrolled */
 BOOL prism_display_scroll(struct PrismCard *c, WORD *rx, WORD *ry);
@@ -351,7 +352,8 @@ BOOL p96_pip_rows(struct Screen *,WORD screenTop,WORD *y0,WORD *y1);
 BOOL p96_pip_volatile(struct Screen *);
 extern ULONG pipGen;                    /* bumped when a PIP opens, closes or changes */
 /* cgxvideo.library's video layers ride on the PIPs (p96.c) */
-APTR p96_pip_attach(struct Window *w, struct PBitMap *source, UWORD sw, UWORD sh, LONG left, LONG top, LONG right, LONG bottom);
+APTR p96_pip_attach(struct Window *w, struct PBitMap *source, UWORD sw, UWORD sh, LONG left, LONG top, LONG right, LONG bottom, LONG keyPen);
+void p96_pip_hw_tick(void);   /* once a frame: layers on a board's overlay follow their windows */
 void p96_pip_window_gone(struct Window *w);   /* CloseWindow: its PIPs leave the list */
 BOOL prism_screen_autoscroll(struct Screen *s);
 void p96_pip_indent(APTR pip, LONG left, LONG top, LONG right, LONG bottom);

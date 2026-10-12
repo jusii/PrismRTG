@@ -13,7 +13,11 @@ Done 2026-10-11: the mode editor (2), video overlay (1), gamma (4), oversized sc
    CPU and shown through the PIP compositor. The ZZ9000's firmware (2.8.1)
    has OP_WRITE_YUV (the ARM converts a YUV 4:2:2 rectangle into the
    framebuffer) and OP_VIDEO_OVERLAY (overlay_handle_op): a later step
-   can hand the conversion to the card there.
+   can hand the conversion to the card there. Done 2026-10-12: the
+   ZZ9000 driver's overlaySet/overlayOff speak OP_VIDEO_OVERLAY
+   (BlitterStudio firmware 2.8+); a cgxvideo layer with a colour key, in a
+   firmware YUV format, on a 16- or 32-bit screen, is shown by the board;
+   everything else stays on the CPU path (HWOVERLAY=OFF forces it).
 2. **A mode editor.** Custom resolutions and refresh rates per monitor
    with a test button, as Picasso96Mode and CGXMode have. Where the driver
    computes its own timings (the Cirrus family, UAE) any size can be

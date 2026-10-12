@@ -41,6 +41,7 @@ void prefs_default(struct PrismPrefs *p)
     p->second = 1;
     p->log = 0;
     p->gamma = 10;
+    p->hwOverlay = 1;
     memset(p->on, 1, sizeof(p->on));
 }
 
@@ -200,6 +201,8 @@ BOOL prefs_load(struct PrismPrefs *p, const char *path)
             p->promote = onoff(v);
         } else if (same(line, "PROMOTEPROG") || same(line, "KEEPPROG")) {
             prefs_prog_set(p, v, same(line, "KEEPPROG"));
+        } else if (same(line, "HWOVERLAY")) {
+            p->hwOverlay = onoff(v);
         } else if (same(line, "GAMMA")) {
             /* "1.4" or "14": tenths */
             unsigned a = 0, b = 0;
@@ -241,6 +244,7 @@ BOOL prefs_save(const struct PrismPrefs *p, const char *path)
         fprintf(f, "PALETTE=BGR\n");
     fprintf(f, "PROMOTE=%s\n", p->promote ? "ON" : "OFF");
     fprintf(f, "GAMMA=%u.%u\n", p->gamma / 10, p->gamma % 10);
+    fprintf(f, "HWOVERLAY=%s\n", p->hwOverlay ? "ON" : "OFF");
     fprintf(f, "UPDATES=%s\n", p->updates == UPD_GITHUB ? "GITHUB" : p->updates == UPD_MIRROR ? "MIRROR" :
                                p->updates == UPD_BOTH ? "BOTH" : "OFF");
     if (p->mirror[0])

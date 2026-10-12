@@ -76,6 +76,7 @@ struct PrismMode {
 #define PBF_REINIT        (1UL << 11) /* release shadow VRAM before setMode */
 
 struct PrismOps;
+struct PrismOverlay;                /* defined after the board: its overlay hooks take it */
 struct PrismBoard {
     const char       *name;          /* "ZZ9000", "Picasso II"           */
     struct ConfigDev *configDev;     /* the board's autoconfig node      */
@@ -161,6 +162,27 @@ struct PrismBoard {
      * per row, rows and pitch (0 = no limit). Larger ones go through ops. */
     UWORD blitMaxBytes, blitMaxRows;
     ULONG blitMaxPitch;
+
+    /* Hardware video overlay (optional): a packed YUV 4:2:2 bitmap in VRAM
+     * shown over the screen at scan-out, scaled into the destination
+     * rectangle, and only where the screen holds the colour key. The
+     * screen is 15, 16 or 32-bit. overlaySet returns FALSE when the board
+     * refuses (PrismD then composes the layer on the CPU); overlayOff
+     * takes it down. One overlay per board. */
+    BOOL (*overlaySet)(struct PrismBoard *b, const struct PrismOverlay *o);
+    void (*overlayOff)(struct PrismBoard *b);
+};
+
+struct PrismOverlay {
+    ULONG srcOff;               /* VRAM offset of the source bitmap        */
+    UWORD srcPitch;             /* its bytes per row                        */
+    UWORD srcW, srcH;           /* pixels (an odd width still holds whole
+                                   four-byte pairs in the row)              */
+    UBYTE srcFormat;            /* PF_YUV_CGX, _P96, _P96PC, _P96PA, _P96PAPC */
+    UBYTE keyed;                /* 1: only where the screen shows `key`     */
+    UBYTE screenBpp;            /* 2 or 4                                   */
+    UBYTE key[4];               /* the key pixel as it lies in VRAM         */
+    WORD  dstX, dstY, dstW, dstH; /* on the screen; may reach past its edges */
 };
 
 #define CURSOR_SIZE 64

@@ -750,8 +750,101 @@ struct PrismPIP {
     ULONG palette[256];
     LONG left,top,width,height,rel,brightness;
     LONG clipleft,cliptop,clipwidth,clipheight;
+    /* a video layer the board can show itself (overlaySet): hw says it may,
+     * hwOn that the board is showing it now (then the compositor leaves it
+     * alone); ov is what the board was last told, hwRetry ticks until a
+     * refused set is tried again */
+    UBYTE hw,hwOn,hwRetry;
+    LONG keyPen;
+    struct PrismOverlay ov;
 };
 static struct PrismPIP *pips;
+
+/* the pixel a pen is drawn as on a 16- or 32-bit screen, as it lies in VRAM */
+static void pen_bytes(struct PBitMap *scr,LONG pen,UBYTE *out)
+{
+    out[0]=out[1]=out[2]=out[3]=0;
+    if(pen<0 || pen>255) return;
+    if(scr->bpp==2) {
+        UWORD v=scr->penTab ? scr->penTab[pen] : 0;
+        out[0]=v>>8;out[1]=v;
+    } else if(scr->bpp==4)
+        composite_put(scr,out,scr->rgbTab ? scr->rgbTab[pen] : 0);
+}
+
+/* the board shows a layer when it has an overlay, the layer's frames are in
+ * its VRAM in a format the firmware takes, the screen is 16- or 32-bit and
+ * the player paints a colour key */
+static BOOL pip_hw_possible(struct PrismPIP *p,struct PBitMap *scr)
+{
+    return p->keyPen>=0 && prism_hw_overlay() && scr && scr->bd->overlaySet && p->source->inVram &&
+           p->source->card==scr->card && (scr->bpp==2 || scr->bpp==4) &&
+           PF_IS_YUV(p->source->fmt) && p->source->fmt!=PF_YUV_YUYV;
+}
+
+static void pip_hw_off(struct PrismPIP *p)
+{
+    if(p->hwOn) {
+        p->source->bd->overlayOff(p->source->bd);
+        p->hwOn=0;pipGen++;
+    }
+}
+
+/* once a frame (PrismD's loop): a layer the board may show follows its
+ * window; while the screen is not the one the board scans out (behind,
+ * dragged, composed) it falls back to the compositor */
+void p96_pip_hw_tick(void)
+{
+    struct PrismPIP *p;
+    UBYTE used[2]={0,0};                    /* one overlay per board */
+    if(!pips) return;
+    LOCK();
+    for(p=pips;p;p=p->next) {
+        struct Window *w=p->window;
+        struct PBitMap *scr;
+        struct PrismBoard *bd;
+        struct PrismOverlay o;
+        LONG iw,ih,left,top,width,height;
+        if(!p->hw || !w) continue;
+        scr=pbm_get(w->WScreen->RastPort.BitMap);
+        bd=p->source->bd;
+        if(!scr || scr->bd!=bd || !pbm_is_shown(scr) || prism_dragging() || used[scr->card->index]) {
+            pip_hw_off(p);
+            continue;
+        }
+        iw=w->Width-w->BorderLeft-w->BorderRight;ih=w->Height-w->BorderTop-w->BorderBottom;
+        left=w->LeftEdge+w->BorderLeft+p->left+((p->rel&PIPRel_Right)?iw:0);
+        top=w->TopEdge+w->BorderTop+p->top+((p->rel&PIPRel_Bottom)?ih:0);
+        width=p->width+((p->rel&PIPRel_Width)?iw:0);
+        height=p->height+((p->rel&PIPRel_Height)?ih:0);
+        if(width<=0 || height<=0 || width>32767 || height>32767 || p->clipwidth<=0 || p->clipheight<=0 ||
+           p->clipleft<0 || p->cliptop<0 || p->clipwidth>p->source->w-p->clipleft ||
+           p->clipheight>p->source->h-p->cliptop) {
+            pip_hw_off(p);
+            continue;
+        }
+        memset(&o,0,sizeof(o));
+        o.srcOff=p->source->vramOff+(ULONG)p->cliptop*p->source->bpr+(ULONG)p->clipleft*p->source->bpp;
+        o.srcPitch=p->source->bpr;
+        o.srcW=p->clipwidth;o.srcH=p->clipheight;
+        o.srcFormat=p->source->fmt;
+        o.keyed=1;
+        o.screenBpp=scr->bpp;
+        pen_bytes(scr,p->keyPen,o.key);
+        o.dstX=left;o.dstY=top;o.dstW=width;o.dstH=height;
+        used[scr->card->index]=1;
+        if(p->hwOn && !memcmp(&o,&p->ov,sizeof(o))) continue;
+        if(p->hwRetry) { p->hwRetry--; continue; }
+        if(bd->overlaySet(bd,&o)) {
+            p->ov=o;
+            if(!p->hwOn) { p->hwOn=1;pipGen++; }
+        } else {
+            pip_hw_off(p);
+            p->hwRetry=50;                  /* a second a frame later */
+        }
+    }
+    ReleaseSemaphore(&lock);
+}
 
 static struct PrismPIP *pip_find(struct Window *w)
 {
@@ -858,7 +951,7 @@ fail:
 /* ---- video layers (cgxvideo.library): a PIP over a program's own window ---
  * The source bitmap is the caller's; the window stays the caller's too.
  * Indents are the video's distance from the window's inner edges. */
-APTR p96_pip_attach(struct Window *w,struct PBitMap *source,UWORD sw,UWORD sh,LONG left,LONG top,LONG right,LONG bottom)
+APTR p96_pip_attach(struct Window *w,struct PBitMap *source,UWORD sw,UWORD sh,LONG left,LONG top,LONG right,LONG bottom,LONG keyPen)
 {
     struct PrismPIP *p;
     UWORD i;
@@ -868,6 +961,8 @@ APTR p96_pip_attach(struct Window *w,struct PBitMap *source,UWORD sw,UWORD sh,LO
     if(!sh || sh>source->h) sh=source->h;
     if(!(p=AllocVec(sizeof(*p),MEMF_PUBLIC|MEMF_CLEAR))) return NULL;
     p->window=w;p->source=source;
+    p->keyPen=keyPen;
+    p->hw=pip_hw_possible(p,pbm_get(w->WScreen->RastPort.BitMap));
     for(i=0;i<256;i++)p->palette[i]=i*0x010101UL;
     if(!source->rgbTab) source->rgbTab=p->palette;
     p->rel=PIPRel_Width|PIPRel_Height;
@@ -896,7 +991,7 @@ void p96_pip_window_gone(struct Window *w)
     struct PrismPIP **link,*p;
     LOCK();
     for(link=&pips;(p=*link);) {
-        if(p->window==w) { *link=p->next;p->window=NULL;p->next=NULL;pipGen++; }
+        if(p->window==w) { pip_hw_off(p);*link=p->next;p->window=NULL;p->next=NULL;pipGen++; }
         else link=&p->next;
     }
     ReleaseSemaphore(&lock);
@@ -905,6 +1000,7 @@ void p96_pip_detach(APTR pip)
 {
     struct PrismPIP **link,*p=pip;
     LOCK();
+    pip_hw_off(p);
     for(link=&pips;*link && *link!=p;link=&(*link)->next);
     if(*link) { *link=p->next;pipGen++; }
     ReleaseSemaphore(&lock);
@@ -973,7 +1069,7 @@ BOOL p96_pip_rows(struct Screen *s,WORD screenTop,WORD *y0,WORD *y1)
     for(p=pips;p;p=p->next) {
         struct Window *w=p->window;
         WORD a,b;
-        if(w->WScreen!=s)continue;
+        if(w->WScreen!=s || p->hwOn)continue;
         a=w->TopEdge+screenTop;b=a+w->Height;
         if(!any) { *y0=a;*y1=b;any=TRUE; }
         else { if(a<*y0)*y0=a; if(b>*y1)*y1=b; }
@@ -984,13 +1080,14 @@ BOOL p96_pip_volatile(struct Screen *s)
 {
     struct PrismPIP *p;
     for(p=pips;p;p=p->next)
-        if(p->window->WScreen==s && (p->source->locks || p->source->direct))return TRUE;
+        if(p->window->WScreen==s && !p->hwOn && (p->source->locks || p->source->direct))return TRUE;
     return FALSE;
 }
+/* (a layer the board shows itself does not count: no composing for it) */
 BOOL p96_pip_active(struct Screen *s)
 {
     struct PrismPIP *p;
-    for(p=pips;p;p=p->next)if(p->window->WScreen==s)return TRUE;
+    for(p=pips;p;p=p->next)if(p->window->WScreen==s && !p->hwOn)return TRUE;
     return FALSE;
 }
 static ULONG pip_bright(ULONG rgb,LONG change)
@@ -1013,7 +1110,7 @@ void p96_pip_compose(struct PBitMap *dst,struct Screen *screen,WORD screenTop,WO
         LONG iw,ih,left,top,width,height,x,y,cw,ch;
         ULONG lastRGB=~0UL;
         UBYTE lastPixel[4];
-        if(w->WScreen!=screen || !w->WLayer || !AttemptSemaphore(&w->WLayer->Lock))continue;
+        if(w->WScreen!=screen || p->hwOn || !w->WLayer || !AttemptSemaphore(&w->WLayer->Lock))continue;
         iw=w->Width-w->BorderLeft-w->BorderRight;ih=w->Height-w->BorderTop-w->BorderBottom;
         left=w->LeftEdge+w->BorderLeft+p->left+((p->rel&PIPRel_Right)?iw:0);
         top=w->TopEdge+w->BorderTop+p->top+((p->rel&PIPRel_Bottom)?ih:0);

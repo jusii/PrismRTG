@@ -127,6 +127,18 @@ A sprite smaller than 64x64 (the ZZ9000's is 32x48) goes in `cursorW` and
 `cursorH`; a pointer image that does not fit is drawn by the software
 pointer instead, so a big pointer never comes out cut off.
 
+## 7a. A video overlay (optional)
+
+A board that can show a packed YUV 4:2:2 bitmap over the screen at
+scan-out, scaled into a rectangle and keyed on a screen colour, provides
+`overlaySet` and `overlayOff` (`struct PrismOverlay` in prismboard.h: the
+source's VRAM offset, pitch, size and format, the destination rectangle,
+the key pixel as it lies in VRAM, the screen's bytes per pixel). PrismD
+then puts a cgxvideo video layer's frames into VRAM and hands the layer to
+the board instead of composing it on the CPU; `overlaySet` returning FALSE
+sends it back to the CPU path, so a firmware without the feature costs
+nothing. One overlay per board; the ZZ9000 driver is the example.
+
 ## 8. Ship it
 
 * Say in the ReadMe what it was tested on. A driver that has only run in

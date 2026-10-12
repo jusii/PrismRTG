@@ -1658,3 +1658,34 @@ visible while another program draws elsewhere, and a fill area it was
 parked in holds only fill colours afterwards (prismgrab); a UAE RTG board
 with WinUAE's hardware sprite off (the MiSTer / RetroArch case) gets the
 pointer by itself.
+
+## Hardware video overlay on the ZZ9000 (2026-10-12)
+
+The CPU path (cgxvideo.library and the P96 PIP composed by present.c) stays
+the fallback; where the board has an overlay the layer goes to it:
+
+* `PrismBoard.overlaySet/overlayOff` with `struct PrismOverlay` (source in
+  VRAM: offset, pitch, size, PF_YUV format; destination rectangle; the key
+  pixel as stored; screen bytes per pixel). FALSE from overlaySet = the CPU
+  path, so a firmware without the op is harmless.
+* The ZZ9000 driver speaks BlitterStudio firmware 2.8's OP_VIDEO_OVERLAY
+  (overlay.c): offset[1]/pitch[1]/x[2]/y[2] the source, x[0],y[0],x[1],y[1]
+  the destination, user[0] flags (1 key, 2 active), u8_user[4] the YUV
+  variant (CGX, P96, PC, PA, PAPC), u8_user[5] set/off, u32_user[1] the key
+  read raw by the ARM (the pixel bytes right-aligned in the field),
+  u32_user[0] the answer (0 = ok; a sentinel of ~0 stays when the firmware
+  does not know the op).
+* cgxvideo allocates a layer's frames in VRAM when the board can show it,
+  the format is one of the firmware's five and the screen is 16- or 32-bit;
+  with a colour key the PIP record is marked `hw`. Once a frame
+  (`p96_pip_hw_tick`, PrismD's loop) such a layer follows its window: the
+  rectangle is sent when it changes, the overlay is taken down while the
+  screen is not the one the board scans out (behind, dragged, composed) and
+  the CPU path takes over; a refused set is retried a second later. While
+  `hwOn`, the compositor, its row bookkeeping and the volatility check all
+  skip the layer.
+* HWOVERLAY=ON|OFF in the prefs (PrismPrefs "Video on board").
+* WinUAE-Prism emulates the op (zz9000board.cpp: the overlay is applied in
+  zz_pixel, CCIR 601, nearest scaling, keyed on the stored pixel bytes) so
+  vlayer.py's YCBCR case runs through the hardware path (channel error 1
+  against the CPU path's 7) and frogger.py covers the real player.
