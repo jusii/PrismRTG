@@ -44,6 +44,16 @@ rows are padded (a pitch of a power of two, say), provide `checkMode` and
 set `bytesPerRow` there, or `ops->pitch` when the padding depends on the
 exact format.
 
+Find the board with `driver_find()` rather than `FindConfigDev()`: it
+skips a board PrismD already drives, so a second copy of the driver takes
+a second board of the kind (two-board machines, `docs/multi-board.md`).
+
+`checkMode` may be asked for a mode whose `pitchPixels` is wider than its
+`width`: an oversized screen with autoscroll, whose display must step rows
+by the bitmap's pitch. Refuse it (return FALSE) unless the board's scan-out
+takes a row length apart from the width; the ZZ9000 and the Cirrus boards
+do, and such screens are simply not offered on a board that does not.
+
 ## 3. Build it
 
 Inside WSL (or wherever amiga-gcc is):
@@ -113,6 +123,9 @@ the same checks.
 `cursorImage`, `cursorShow` and `cursorMove` with `PBF_HW_CURSOR` in
 `flags`. The image is 64x64 bytes with pens 0-3 and three R,G,B colours.
 Without them PrismD draws a software pointer, which costs a few percent.
+A sprite smaller than 64x64 (the ZZ9000's is 32x48) goes in `cursorW` and
+`cursorH`; a pointer image that does not fit is drawn by the software
+pointer instead, so a big pointer never comes out cut off.
 
 ## 8. Ship it
 

@@ -95,6 +95,12 @@ static BOOL tpl_CheckMode(struct PrismBoard *b, struct PrismMode *m)
     if (m->width < 320 || m->height < 200 || m->width > b->maxWidth || m->height > b->maxHeight)
         return FALSE;
     /* TODO: refresh (m->refresh is Hz, 0 = the board's default) */
+    /* m->pitchPixels: an oversized (autoscroll) screen is wider than the
+     * mode and the display must step rows by its pitch. Refuse it unless
+     * the board's scan-out takes a row length apart from the width (then
+     * use it for bytesPerRow and program it in setMode). */
+    if (m->pitchPixels && m->pitchPixels != m->width)
+        return FALSE;
     m->bytesPerRow = (ULONG)m->width * bpp;
     return TRUE;
 }
@@ -205,7 +211,9 @@ static const struct PrismOps tpl_ops = { .fill = tpl_fill, .copy = tpl_copy, .ex
  * 64x64 bytes, one per pixel: 0 transparent, 1..3 the colours in rgb
  * (three R,G,B triples). x, y are never negative (PrismD clips at the
  * top-left). Set PBF_HW_CURSOR when all three work; without them PrismD
- * draws a software pointer. */
+ * draws a software pointer. A sprite smaller than 64x64: say so in
+ * b->cursorW / b->cursorH (the probe), and a pointer image that does not
+ * fit is drawn by PrismD's software pointer instead. */
 #if 0   /* TODO: enable when the board has a sprite */
 static void tpl_CursorImage(struct PrismBoard *b, const UBYTE *img, const UBYTE *rgb) {}
 static void tpl_CursorShow(struct PrismBoard *b, BOOL on) {}
@@ -231,7 +239,10 @@ static BOOL tpl_probe(struct PrismBoard *b)
     b->vram      = p->fakeVram;
     b->vramSize  = 4UL << 20;
 #else
-    struct ConfigDev *cd = FindConfigDev(NULL, TEMPLATE_MFR, TEMPLATE_PROD);
+    /* driver_find, not FindConfigDev: it skips a board PrismD already
+     * drives, so a second copy of this driver takes a second board of the
+     * kind (multi-board.md) */
+    struct ConfigDev *cd = driver_find(NULL, TEMPLATE_MFR, TEMPLATE_PROD);
     if (!cd)
         return FALSE;
     b->name      = "Template board";            /* TODO: the board's name */
