@@ -31,7 +31,11 @@ Done 2026-10-11: the mode editor (2), video overlay (1), gamma (4), oversized sc
    drivers; the rest is Intuition-side work (SA_Overscan, SA_AutoScroll).
 6. **Larger and multi-colour pointers** from the OS 3.2 pointer
    preferences. The classic two-colour sprite is handled; bigger ones fall
-   to the software pointer today.
+   to the software pointer today. (Larger: done 2026-10-11. Multi-colour:
+   closed 2026-10-12 - OS 3.2's pointerclass hands over a two-plane sprite
+   even from a four-plane bitmap, es_flags 0, no attached second sprite,
+   so Intuition never offers a 16-colour pointer and there is nothing for
+   PrismD to show; the ZZ9000's CLUT cursor would take 15 pens if it did.)
 7. **The newer CyberGraphX calls** (WritePixelArrayAlpha,
    ProcessPixelArray, ...). Check which our cybergraphics.library answers;
    a few modern programs use them.

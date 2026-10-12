@@ -484,8 +484,11 @@ LONG h_ChangeExtSpriteA(struct Regs *r)
     struct ExtSprite *n = (struct ExtSprite *)r->a[2];
     call_regs(o_ChangeExtSpriteA, r);
     if (n && n->es_SimpleSprite.num == 0) {
-        dbg("ChangeExtSprite h=%u ww=%u x=%d y=%d\n", n->es_SimpleSprite.height,
-            n->es_wordwidth, n->es_SimpleSprite.x, n->es_SimpleSprite.y);
+        /* (es_flags: SPRITE_ATTACHED would mean a 16-colour pair; OS 3.2's
+         * pointerclass never sets it - a four-plane pointer bitmap arrives
+         * as two planes, checked 2026-10-12, so there is nothing more to show) */
+        dbg("ChangeExtSprite h=%u ww=%u flags=%x x=%d y=%d\n", n->es_SimpleSprite.height,
+            n->es_wordwidth, n->es_flags, n->es_SimpleSprite.x, n->es_SimpleSprite.y);
         decode(n->es_SimpleSprite.posctldata, n->es_SimpleSprite.height, n->es_wordwidth);
         try_apply();
     }
