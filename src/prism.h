@@ -3,9 +3,15 @@
 /*
  * prism.h - what other programs can see of a running Prism.
  *
- * M1: Prism runs as the PrismD daemon and publishes a named semaphore,
- * "prism", holding this structure. Clients find it with FindSemaphore()
- * under Forbid(). (From M2 on this becomes prism.library.)
+ * PrismD publishes a named semaphore, "prism", holding this structure.
+ * Clients find it with FindSemaphore() under Forbid(). That is the stable
+ * way to tell that PrismRTG is running and which release it is (issue
+ * #12): the semaphore stays whatever else is added later, so a client
+ * checks FindSemaphore(PRISM_SEMNAME) and reads `release` (version 6+) -
+ * no prism.library replaces it. PrismD's own cybergraphics.library and
+ * Picasso96API.library are compatibility faces, not the identity.
+ * `version` counts revisions of this structure; a field exists from the
+ * version noted at it on.
  */
 #ifndef PRISM_H
 #define PRISM_H
@@ -93,6 +99,10 @@ struct PrismSem {
      * two boards of one kind apart */
     ULONG boardAddr[2];
     UBYTE boardsSwapped;         /* PRIMARY=SECOND took effect at start */
+    /* the release this PrismD belongs to, for tools that show it (xSysInfo,
+     * issue #12): PRISM_RELEASE ("1.1b6") and the $VER date, dd.mm.yy */
+    const char *release;
+    const char *releaseDate;
 };
 #define PRISM_HW_FILL     (1UL << 0)
 #define PRISM_HW_COPY     (1UL << 1)    /* within one bitmap            */

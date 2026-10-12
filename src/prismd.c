@@ -2789,6 +2789,8 @@ int main(void)
     sem.ss.ss_Link.ln_Name = PRISM_SEMNAME;
     sem.ss.ss_Link.ln_Pri = 0;
     sem.version = PRISM_VERSION;
+    sem.release = PRISM_RELEASE;
+    sem.releaseDate = PRISM_RELDATE;
     sem.boardName = board.name;
     sem.task = FindTask(NULL);
     sem.numModes = prism_mode_count();
