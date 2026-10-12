@@ -59,6 +59,10 @@ $CC $CFLAGS -s -o out/PrismShow tools/prismshow.c
 $CC $CFLAGS -s -o out/prismdiag tools/prismdiag.c
 $CC $CFLAGS -s -o out/iotime tools/iotime.c
 $CC $CFLAGS -s -o out/p2peek tools/p2peek.c
+# hardware probes (real boards only); built so they cannot rot unnoticed
+$CC $CFLAGS -s -o out/ddcprobe tools/ddcprobe.c
+$CC $CFLAGS -s -o out/memwhere tools/memwhere.c
+$CC $CFLAGS -s -o out/zztime tools/zztime.c
 $CC $CFLAGS -s -o out/lockwatch tools/lockwatch.c
 $CC $CFLAGS -s -o out/cmreq tools/cmreq.c
 $CC $CFLAGS -s -o out/lastalert tools/lastalert.c

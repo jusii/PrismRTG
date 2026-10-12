@@ -55,7 +55,7 @@ int main(void)
     volatile ULONG *chip, *fast;
     volatile ULONG sink = 0;
     ULONG i, t0, t;
-    UBYTE a, b;
+    UBYTE a;
 
     ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library", 37);
     if (!ExpansionBase) return 20;

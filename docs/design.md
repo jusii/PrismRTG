@@ -2,7 +2,10 @@
 
 > Development notes, in the order things happened. The project was called
 > "Prism" while it was being written and is published as **PrismRTG**; the
-> files kept their short names. Read the README first.
+> files kept their short names. Read the README first. Where these notes
+> say a `prism.library` would take over from the `PrismD` daemon and its
+> `prism` semaphore: it never did, and the semaphore is the interface
+> (`src/prism.h`).
 
 Prism is our own RTG (ReTargetable Graphics) system for AmigaOS 3.x: a from-scratch
 replacement for Picasso96, built for fun and scoped to the hardware we own.
