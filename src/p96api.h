@@ -34,10 +34,16 @@ enum {
     RGBFB_R5G5B5,
     RGBFB_B5G6R5PC,     /* 2 bytes, low byte first, blue on top          */
     RGBFB_B5G5R5PC,
-    RGBFB_Y4U2V2,
-    RGBFB_Y4U1V1,
+    RGBFB_Y4U2V2,       /* = RGBFB_YUV422CGX: Y0 U Y1 V, CCIR 601 (PIP sources) */
+    RGBFB_Y4U1V1,       /* = RGBFB_YUV411 (not supported)                */
+    RGBFB_YUV411PC,     /* (not supported)                               */
+    RGBFB_YUV422,       /* Y1 U Y0 V                                     */
+    RGBFB_YUV422PC,     /* V Y0 U Y1                                     */
+    RGBFB_YUV422PA,     /* Y0 Y1 V U                                     */
+    RGBFB_YUV422PAPC,   /* U V Y1 Y0                                     */
     RGBFB_MaxFormats
 };
+#define RGBFB_YUV422CGX RGBFB_Y4U2V2
 #define RGBFF(f) (1UL << (f))
 
 struct P96RenderInfo {

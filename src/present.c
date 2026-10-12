@@ -342,8 +342,13 @@ static void present_card(void)
     if(showBack && screen->NextScreen && (backChanged || moved || ptrChanged))
         p96_pip_compose(&frame,screen->NextScreen,backTop,bandY0,bandY1);
     if (hwBand) {
-        if (frontChanged) band_blit(front,bandY0,bandY1,top);
-        else if (ptrChanged && seenOv1>seenOv0)
+        if (frontChanged) {
+            /* not the overlay rows: those are composed on the CPU and
+             * uploaded below, and a blit over them would show the front
+             * for the rest of the pass (a video layer flickered black) */
+            if (ovY1>ovY0) { band_blit(front,bandY0,ovY0,top); band_blit(front,ovY1,bandY1,top); }
+            else band_blit(front,bandY0,bandY1,top);
+        } else if (ptrChanged && seenOv1>seenOv0)
             band_blit(front,clampw(seenOv0,bandY0,bandY1),clampw(seenOv1,bandY0,bandY1),top);
     }
     p96_pip_compose(&frame,screen,top,0,0);

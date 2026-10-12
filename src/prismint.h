@@ -346,6 +346,14 @@ BOOL p96_pip_rows(struct Screen *,WORD screenTop,WORD *y0,WORD *y1);
 /* a PIP source a program can write into without a call PrismD sees */
 BOOL p96_pip_volatile(struct Screen *);
 extern ULONG pipGen;                    /* bumped when a PIP opens, closes or changes */
+/* cgxvideo.library's video layers ride on the PIPs (p96.c) */
+APTR p96_pip_attach(struct Window *w, struct PBitMap *source, LONG left, LONG top, LONG right, LONG bottom);
+void p96_pip_indent(APTR pip, LONG left, LONG top, LONG right, LONG bottom);
+void p96_pip_detach(APTR pip);
+
+/* ---- cgxvideo.c: Prism's own cgxvideo.library (video layers) ------- */
+BOOL cgxvideo_init(void);
+BOOL cgxvideo_remove(void);
 /* the frame rows pointer_compose would draw on; FALSE = it draws nothing */
 BOOL pointer_compose_rows(struct PrismCard *c,WORD top,WORD *y0,WORD *y1);
 BOOL pointer_is_card(const struct PrismCard *c);

@@ -35,9 +35,20 @@ enum PrismFormat {
     PF_BGR565LE,       /* 2 bytes, GGGRRRRR BBBBBGGG (PC order, red and
                           blue exchanged: Piccolo, Spectrum)          */
     PF_BGR555LE,
+    /* YUV 4:2:2, two pixels in a longword: video sources (Picasso96 PIPs,
+     * cgxvideo.library video layers), never a screen's format. Boards never
+     * see them; the compositor converts them (composite.h). */
+    PF_YUV_CGX,        /* Y0 Cb Y1 Cr, CCIR 601 ranges (Y 16..235): CGX
+                          SRCFMT_YCbCr16, Picasso96 RGBFB_YUV422CGX       */
+    PF_YUV_YUYV,       /* Y0 U Y1 V, full range: CGX SRCFMT_YUV16        */
+    PF_YUV_P96,        /* Y1 U Y0 V (RGBFB_YUV422)                       */
+    PF_YUV_P96PC,      /* V Y0 U Y1 (RGBFB_YUV422PC)                     */
+    PF_YUV_P96PA,      /* Y0 Y1 V U (RGBFB_YUV422PA)                     */
+    PF_YUV_P96PAPC,    /* U V Y1 Y0 (RGBFB_YUV422PAPC)                   */
     PF_COUNT
 };
 #define PF_BIT(f) (1UL << (f))
+#define PF_IS_YUV(f) ((f) >= PF_YUV_CGX && (f) < PF_COUNT)
 
 /* One display mode request. Timings are filled in by the driver's own mode
  * table; Prism only asks for a size, depth and refresh. */

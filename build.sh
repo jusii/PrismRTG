@@ -34,7 +34,7 @@ sh tools/mkdriver.sh UAEGFX src/drv_uaegfx.c src/rtg_ops.c
 OUT=out/template sh tools/mkdriver.sh TEMPLATE src/drv_template.c
 
 echo "== M1 =="
-$CC $CFLAGS $GC -s -o out/PrismD src/prismd.c src/prefs.c src/bitmap.c src/present.c src/render.c src/gels.c src/selftest.c src/pointer.c src/cgx.c src/p96.c src/stubs.S src/p2c.S src/boardops.c src/driver_loader.c
+$CC $CFLAGS $GC -s -o out/PrismD src/prismd.c src/prefs.c src/bitmap.c src/present.c src/render.c src/gels.c src/selftest.c src/pointer.c src/cgx.c src/cgxvideo.c src/p96.c src/stubs.S src/p2c.S src/boardops.c src/driver_loader.c
 $CC $CFLAGS -s -o out/PrismScreen tools/prismscreen.c tools/m8tests.c
 $CC $CFLAGS -s -o out/PrismMouse tools/prismmouse.c
 $CC $CFLAGS -s -o out/PrismBench tools/prismbench.c -lm
@@ -70,6 +70,8 @@ $CC -nostartfiles -nostdlib -s -o out/Picasso96API.library tools/p96stub.S
 $CC $CFLAGS -s -o out/p96test tools/p96test.c
 $CC $CFLAGS -s -o out/trapwatch tools/trapwatch.c
 $CC $CFLAGS -s -o out/tmpltest tools/tmpltest.c
+$CC $CFLAGS -s -o out/vlayertest tools/vlayertest.c tools/cgxvideo_stubs.S
+$CC $CFLAGS -s -o out/vrampeek tools/vrampeek.c
 $CC $CFLAGS -s -o out/movebench tools/movebench.c
 $CC $CFLAGS -s -o out/dragcheck tools/dragcheck.c
 $CC $CFLAGS -DSCRMOVE -s -o out/scrmove tools/dragcheck.c

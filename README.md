@@ -351,6 +351,18 @@ blitter off.
   edge to edge has a band left over; programs that bring their own bitmap
   (`CUSTOMBITMAP`) or ask for more than 8 planes are left alone, and so
   is Workbench itself (Prefs/ScreenMode puts it on the board).
+* **Video layers (overlay)** for video players: PrismD carries its own
+  cgxvideo.library (CreateVLayerHandle, AttachVLayer, LockVLayer and the
+  rest, V42), and the Picasso96 PIP calls take the YUV 4:2:2 formats.
+  None of the supported cards has an overlay engine we drive, so the
+  player's frames (YCbCr 4:2:2, YUV 4:2:2, or 15/16-bit RGB) are
+  converted on the CPU and scaled into the window by the compositor every
+  tick, ahead of a software pointer. Colour keying is answered with a pen
+  but not needed: the layer's area is drawn over whatever the player
+  painted. Tested with FroggerNG (`DISPLAY=VLAYER` and `DISPLAY=P96`) on
+  the emulated ZZ9000 and GBAPII++; expect a 68030 to manage small
+  windows and an 060 full ones. The ZZ9000's firmware can convert YUV on
+  the card (OP_WRITE_YUV); handing it that work is on the backlog.
 * **Your own sizes** (the four "custom" entries in PrismPrefs' mode list,
   `CUSTOM1=1152x864` .. `CUSTOM4=` in the prefs file): pick one, give it a
   width (a multiple of 8) and a height, Set size, and Test shows it at

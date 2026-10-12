@@ -53,7 +53,11 @@ static UWORD told;
 static const UBYTE rgbf2pf[RGBFB_MaxFormats] = {
     PF_COUNT, PF_CLUT8, PF_RGB24, PF_BGR24, PF_RGB565LE, PF_RGB555LE, PF_ARGB32,
     PF_COUNT /* ABGR: converted here */, PF_RGBA32, PF_BGRA32, PF_RGB565BE, PF_RGB555BE,
-    PF_BGR565LE, PF_BGR555LE, PF_COUNT, PF_COUNT
+    PF_BGR565LE, PF_BGR555LE,
+    /* the YUV 4:2:2 formats: PIP sources only, composed in software
+     * (YUV411 is not: four pixels in five bits each) */
+    PF_YUV_CGX, PF_COUNT /* YUV411 */, PF_COUNT /* YUV411PC */, PF_YUV_P96, PF_YUV_P96PC,
+    PF_YUV_P96PA, PF_YUV_P96PAPC
 };
 
 static ULONG pf2rgbf(UBYTE fmt)
@@ -73,6 +77,8 @@ static UBYTE rgbf_bpp(ULONG f)
     case RGBFB_A8R8G8B8: case RGBFB_A8B8G8R8: case RGBFB_R8G8B8A8: case RGBFB_B8G8R8A8: return 4;
     case RGBFB_R5G6B5PC: case RGBFB_R5G5B5PC: case RGBFB_R5G6B5: case RGBFB_R5G5B5:
     case RGBFB_B5G6R5PC: case RGBFB_B5G5R5PC: return 2;
+    case RGBFB_Y4U2V2: case RGBFB_YUV422: case RGBFB_YUV422PC:
+    case RGBFB_YUV422PA: case RGBFB_YUV422PAPC: return 2;    /* 4:2:2: two bytes a pixel */
     }
     return 0;
 }
@@ -586,6 +592,8 @@ static BOOL arr_ok(const struct P96RenderInfo *ri, struct ArrCtx *a)
 {
     if (!ri || !ri->Memory || ri->RGBFormat >= RGBFB_MaxFormats || !(a->bpp = rgbf_bpp(ri->RGBFormat)))
         return FALSE;
+    if (PF_IS_YUV(rgbf2pf[ri->RGBFormat]))
+        return FALSE;                    /* YUV sources are written directly, not as RGB arrays */
     a->mem = ri->Memory;
     a->mod = ri->BytesPerRow;
     a->fmt = ri->RGBFormat;
@@ -807,6 +815,8 @@ static struct Window *P_PIP_OpenTagList(struct TagItem *tags __asm("a0"))
     UWORD i;
     if(!sw || !sh || sw>4096 || sh>4096 || format>=RGBFB_MaxFormats || rgbf2pf[format]==PF_COUNT)
         goto fail;
+    if(PF_IS_YUV(rgbf2pf[format]) && (sw&1))
+        goto fail;                          /* two pixels share a longword */
     error=PIPERR_NOTAVAILABLE;
     if(GetTagData(P96PIP_Type,PIPT_MemoryWindow,tags)!=PIPT_MemoryWindow ||
        GetTagData(P96PIP_NoMemory,0,tags) || GetTagData(P96PIP_RenderFunc,0,tags) ||
@@ -845,6 +855,48 @@ fail:
     if(err)*err=error;
     return NULL;
 }
+/* ---- video layers (cgxvideo.library): a PIP over a program's own window ---
+ * The source bitmap is the caller's; the window stays the caller's too.
+ * Indents are the video's distance from the window's inner edges. */
+APTR p96_pip_attach(struct Window *w,struct PBitMap *source,LONG left,LONG top,LONG right,LONG bottom)
+{
+    struct PrismPIP *p;
+    UWORD i;
+    if(!w || !source || !w->WScreen || !pbm_get(w->WScreen->RastPort.BitMap)) return NULL;
+    if(!(p=AllocVec(sizeof(*p),MEMF_PUBLIC|MEMF_CLEAR))) return NULL;
+    p->window=w;p->source=source;
+    for(i=0;i<256;i++)p->palette[i]=i*0x010101UL;
+    if(!source->rgbTab) source->rgbTab=p->palette;
+    p->rel=PIPRel_Width|PIPRel_Height;
+    p->left=left;p->top=top;p->width=-(left+right);p->height=-(top+bottom);
+    p->clipwidth=source->w;p->clipheight=source->h;
+    LOCK();
+    if(!present_reserve(w->WScreen)) { ReleaseSemaphore(&lock);FreeVec(p);return NULL; }
+    p->next=pips;pips=p;pipGen++;
+    ReleaseSemaphore(&lock);
+    dbg("pip: attached %lx to window %lx on screen %lx (source %ux%u fmt %u)\n",(ULONG)p,(ULONG)w,
+        (ULONG)w->WScreen,source->w,source->h,source->fmt);
+    return p;
+}
+void p96_pip_indent(APTR pip,LONG left,LONG top,LONG right,LONG bottom)
+{
+    struct PrismPIP *p=pip;
+    LOCK();
+    p->left=left;p->top=top;p->width=-(left+right);p->height=-(top+bottom);
+    pipGen++;
+    ReleaseSemaphore(&lock);
+}
+void p96_pip_detach(APTR pip)
+{
+    struct PrismPIP **link,*p=pip;
+    LOCK();
+    for(link=&pips;*link && *link!=p;link=&(*link)->next);
+    if(*link) { *link=p->next;pipGen++; }
+    ReleaseSemaphore(&lock);
+    if(p->source->rgbTab==p->palette) p->source->rgbTab=NULL;
+    FreeVec(p);
+}
+
 static BOOL P_PIP_Close(struct Window *w __asm("a0"))
 {
     struct PrismPIP **link,*p;

@@ -4,9 +4,11 @@
 #ifndef PRISM_COMPOSITE_H
 #define PRISM_COMPOSITE_H
 #include <string.h>
+#include "yuv.h"
 /* Presentation works on a private scanout image, never application pixels. */
 static inline ULONG composite_rgb(const struct PBitMap *p, const UBYTE *pixel)
 {
+    if (PF_IS_YUV(p->fmt)) return yuv_rgb(p->fmt,pixel);
     if (p->fmt != PF_CLUT8) return pf_get(p->fmt,pixel);
     return p->rgbTab ? p->rgbTab[*pixel] : *pixel * 0x010101UL;
 }

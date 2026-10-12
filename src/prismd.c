@@ -2605,6 +2605,8 @@ int main(void)
     STAGE("patches in");
     if (cgx_init())
         printf("PrismD: cybergraphics.library 41 added\n");
+    if (cgxvideo_init())
+        printf("PrismD: cgxvideo.library 42 added (video layers, composed in software)\n");
     if (chipTop != 0xffffffffUL && p96_init())
         printf("PrismD: Picasso96API.library 2 added (Prism's own)\n");
 
@@ -2708,6 +2710,10 @@ int main(void)
         }
         if (!p96_remove()) {
             printf("PrismD: programs still have Picasso96API.library open\n");
+            continue;
+        }
+        if (!cgxvideo_remove()) {
+            printf("PrismD: programs still have cgxvideo.library open\n");
             continue;
         }
         if (!cgx_remove()) {

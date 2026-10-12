@@ -8,10 +8,12 @@ In progress (2026-10-11), in this order: the mode editor (2), video overlay (1),
 
 1. **Video overlay.** A YUV window with colour keying through
    cgxvideo.library and the Picasso96 PIP calls with YUV formats, for
-   video players. None of the supported cards has an overlay engine we
-   drive (the Cirrus 5426/5428/5434 have none; the ZZ9000's firmware
-   offers none), so this is a software path: the player's YUV frames are
-   converted on the CPU and shown through the PIP compositor.
+   video players. The Cirrus 5426/5428/5434 have no overlay engine, so
+   this is a software path: the player's YUV frames are converted on the
+   CPU and shown through the PIP compositor. The ZZ9000's firmware (2.8.1)
+   has OP_WRITE_YUV (the ARM converts a YUV 4:2:2 rectangle into the
+   framebuffer) and OP_VIDEO_OVERLAY (overlay_handle_op): a later step
+   can hand the conversion to the card there.
 2. **A mode editor.** Custom resolutions and refresh rates per monitor
    with a test button, as Picasso96Mode and CGXMode have. Where the driver
    computes its own timings (the Cirrus family, UAE) any size can be

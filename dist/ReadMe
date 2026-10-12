@@ -118,6 +118,13 @@ Screen mode promotion
   screen drawn edge to edge leaves a band; programs with their own bitmap
   or more than 8 planes are left alone. PrismD reads this when it starts.
 
+Video layers (overlay)
+  PrismD carries its own cgxvideo.library and the Picasso96 PIP calls
+  take the YUV formats, so video players (FroggerNG with DISPLAY=VLAYER
+  or DISPLAY=P96, and others that use either) show their picture in a
+  window. The card has no overlay engine, so the frames are converted
+  and scaled by the CPU: small windows on a 68030, full ones on an 060.
+
 Your own sizes
   The mode list ends with four "custom" entries: pick one, type a width
   (a multiple of 8) and a height, Set size, and Test shows it at once.
