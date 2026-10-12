@@ -55,8 +55,6 @@ int main(void)
     volatile ULONG *chip, *fast;
     volatile ULONG sink = 0;
     ULONG i, t0, t;
-    UBYTE a;
-
     ExpansionBase = (struct ExpansionBase *)OpenLibrary("expansion.library", 37);
     if (!ExpansionBase) return 20;
     if (!(regs = mem = FindConfigDev(NULL, 0x6d6e, 4))) {
