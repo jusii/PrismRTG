@@ -125,6 +125,11 @@ Video layers (overlay)
   window. The card has no overlay engine, so the frames are converted
   and scaled by the CPU: small windows on a 68030, full ones on an 060.
 
+Gamma
+  "Gamma" in PrismPrefs (GAMMA=1.4 in the prefs file): the palette's
+  curve for 256-colour screens and the Test picture. Deeper screens are
+  not touched (their colours are in the pixels, not the DAC).
+
 Your own sizes
   The mode list ends with four "custom" entries: pick one, type a width
   (a multiple of 8) and a height, Set size, and Test shows it at once.

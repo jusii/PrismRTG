@@ -363,6 +363,11 @@ blitter off.
   the emulated ZZ9000 and GBAPII++; expect a 68030 to manage small
   windows and an 060 full ones. The ZZ9000's firmware can convert YUV on
   the card (OP_WRITE_YUV); handing it that work is on the backlog.
+* **Gamma** ("Gamma" in PrismPrefs, `GAMMA=1.4` in the prefs file, 0.5
+  to 2.5): every palette a board is given goes through the curve, so
+  256-colour screens and the Test picture brighten (above 1.0) or darken
+  (below) in the midtones. The DAC is where it applies: 16-bit and deeper
+  screens carry their colours in the pixels and are not touched.
 * **Your own sizes** (the four "custom" entries in PrismPrefs' mode list,
   `CUSTOM1=1152x864` .. `CUSTOM4=` in the prefs file): pick one, give it a
   width (a multiple of 8) and a height, Set size, and Test shows it at

@@ -48,6 +48,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <math.h>
 #include "prismboard.h"
 #include "prism.h"
 #include "prismint.h"
@@ -557,6 +558,35 @@ static void ps_record(struct PScreen *ps, ULONG n, ULONG r, ULONG g, ULONG b)
 }
 
 /* Copy a screen's colours to the card. Caller holds the lock. */
+/* GAMMA=: the curve every palette goes to a board through. lut[v] is v
+ * raised to 1/gamma (gamma above 1 brightens the midtones), computed once
+ * from the prefs (libm's pow, software floating point: once at start). */
+static UBYTE gammaLut[256];
+
+static void gamma_init(void)
+{
+    ULONG i;
+    for (i = 0; i < 256; i++)
+        gammaLut[i] = i;
+    if (prefs.gamma == 10 || prefs.gamma < 5 || prefs.gamma > 25)
+        return;
+    for (i = 1; i < 255; i++)
+        gammaLut[i] = (UBYTE)(255.0 * pow(i / 255.0, 10.0 / prefs.gamma) + 0.5);
+    printf("PrismD: gamma %u.%u: palettes through a curve (128 -> %u)\n", prefs.gamma / 10, prefs.gamma % 10,
+           gammaLut[128]);
+}
+
+/* a board's palette, through the gamma curve */
+static void board_palette(struct PrismCard *c, UWORD first, UWORD count, const UBYTE *rgb)
+{
+    static UBYTE out[256 * 3];
+    ULONG i;
+    if (count > 256) count = 256;
+    for (i = 0; i < (ULONG)count * 3; i++)
+        out[i] = gammaLut[rgb[i]];
+    c->b->setPalette(c->b, first, count, out);
+}
+
 static void push_palette(struct ViewPort *vp)
 {
     ULONG n, i;
@@ -574,7 +604,7 @@ static void push_palette(struct ViewPort *vp)
             ps_colours(ps, vp->ColorMap, n);
             for (i = 0; i < n * 3; i++)
                 palRGB[i] = palTab[i] >> 24;
-            c->b->setPalette(c->b, 0, n, palRGB);
+            board_palette(c, 0, n, palRGB);
         }
     }
     pointer_colours(vp);
@@ -1182,7 +1212,7 @@ static void palette_one(struct ViewPort *vp, ULONG n, ULONG r, ULONG g, ULONG b)
             struct CardState *cs = &cst[ps->mode->card->index];
             if (vp == cs->shownVP) {
                 if (!cs->shown || cs->shown->mode->bpp == 1)
-                    ps->mode->card->b->setPalette(ps->mode->card->b, n, 1, c);
+                    board_palette(ps->mode->card, n, 1, c);
                 if (n >= 16 && n < 32)           /* the pointer's colours live here */
                     pointer_colours(vp);
             }
@@ -1963,7 +1993,7 @@ static LONG test_begin_on(UBYTE card, ULONG width, ULONG height, ULONG bits, ULO
         for (i = 0; i < 126; i++)
             cs->testPal[(130 + i) * 3] = cs->testPal[(130 + i) * 3 + 1] = cs->testPal[(130 + i) * 3 + 2] =
                 i * 255 / 125;
-        c->b->setPalette(c->b, 0, 256, cs->testPal);
+        board_palette(c, 0, 256, cs->testPal);
     }
     if (!cs->rtgOn) {
         c->b->setSwitch(c->b, TRUE);
@@ -2499,6 +2529,7 @@ int main(void)
 
     /* settings from PrismPrefs; BOARD= and LOG on the command line win */
     prefs_load(&prefs, args[1] ? (const char *)args[1] : PREFS_ENV);
+    gamma_init();
     /* LOG=SYNC is for a machine that dies during boot, where PrismD is
      * started with no output: the log goes to SYS:PrismD.log (dbg_flush) */
     if (prefs.log && !dbgRing)

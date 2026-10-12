@@ -40,6 +40,7 @@ void prefs_default(struct PrismPrefs *p)
     p->blitter = 1;
     p->second = 1;
     p->log = 0;
+    p->gamma = 10;
     memset(p->on, 1, sizeof(p->on));
 }
 
@@ -199,6 +200,13 @@ BOOL prefs_load(struct PrismPrefs *p, const char *path)
             p->promote = onoff(v);
         } else if (same(line, "PROMOTEPROG") || same(line, "KEEPPROG")) {
             prefs_prog_set(p, v, same(line, "KEEPPROG"));
+        } else if (same(line, "GAMMA")) {
+            /* "1.4" or "14": tenths */
+            unsigned a = 0, b = 0;
+            int got = sscanf(v, "%u.%u", &a, &b);
+            unsigned g = got == 2 ? a * 10 + (b % 10) : a >= 5 ? a : a * 10;
+            if (g >= 5 && g <= 25)
+                p->gamma = g;
         } else if (same(line, "UPDATES")) {
             p->updates = same(v, "GITHUB") ? UPD_GITHUB : same(v, "MIRROR") ? UPD_MIRROR :
                          same(v, "BOTH") ? UPD_BOTH : UPD_OFF;
@@ -232,6 +240,7 @@ BOOL prefs_save(const struct PrismPrefs *p, const char *path)
     if (p->clutBGR)
         fprintf(f, "PALETTE=BGR\n");
     fprintf(f, "PROMOTE=%s\n", p->promote ? "ON" : "OFF");
+    fprintf(f, "GAMMA=%u.%u\n", p->gamma / 10, p->gamma % 10);
     fprintf(f, "UPDATES=%s\n", p->updates == UPD_GITHUB ? "GITHUB" : p->updates == UPD_MIRROR ? "MIRROR" :
                                p->updates == UPD_BOTH ? "BOTH" : "OFF");
     if (p->mirror[0])

@@ -37,7 +37,7 @@ static const char version[] __attribute__((used)) = "$VER: PrismPrefs " PRISM_RE
 enum { GAD_LIST = 1, GAD_ON, GAD_HZ, GAD_BOARD, GAD_BLIT, GAD_LOG,
        GAD_SAVE, GAD_USE, GAD_DEFAULTS, GAD_CANCEL, GAD_STATUS, GAD_TEST, GAD_BGR,
        GAD_DRAG, GAD_SOFTPTR, GAD_PROMOTE, GAD_PLIST, GAD_PROG, GAD_PADD, GAD_PKEEP, GAD_PDEL,
-       GAD_UPDATES, GAD_CHECK, GAD_W, GAD_H, GAD_SETSIZE };
+       GAD_UPDATES, GAD_CHECK, GAD_W, GAD_H, GAD_SETSIZE, GAD_GAMMA };
 
 static STRPTR hzLabels[] = { "Default", "60 Hz", "70 Hz", "72 Hz", "75 Hz", NULL };
 /* the Board cycle: Auto three ways - every board PrismD finds (two at
@@ -52,13 +52,25 @@ static STRPTR logLabels[] = { "Off", "On", "Sync", NULL };
 /* UPDATES= (UPD_OFF, UPD_GITHUB, UPD_MIRROR, UPD_BOTH) */
 static STRPTR updLabels[] = { "Off", "GitHub", "Mirror", "GitHub, then mirror", NULL };
 static const char *const updSource[] = { "OFF", "GITHUB", "MIRROR", "BOTH" };
+/* GAMMA= in tenths */
+static STRPTR gammaLabels[] = { "1.0 (off)", "1.2", "1.4", "1.6", "1.8", "2.0", "0.8", NULL };
+static const UBYTE gammaValues[] = { 10, 12, 14, 16, 18, 20, 8 };
+
+static UWORD gamma_index(UBYTE g)
+{
+    UWORD i;
+    for (i = 0; i < sizeof(gammaValues); i++)
+        if (gammaValues[i] == g)
+            return i;
+    return 0;
+}
 
 struct Gui {
     struct Screen *scr;
     APTR vi;
     struct Window *win;
     struct Gadget *glist, *gList, *gOn, *gHz, *gBoard, *gBlit, *gLog, *gBgr, *gDrag, *gSoft, *gStatus;
-    struct Gadget *gPromote, *gPList, *gProg, *gUpdates, *gW, *gH, *gSet;
+    struct Gadget *gPromote, *gPList, *gProg, *gUpdates, *gW, *gH, *gSet, *gGamma;
     struct List modes;
     struct Node node[PREFS_NMODES];
     char text[PREFS_NMODES][48];
@@ -235,6 +247,7 @@ static void show_settings(struct Gui *g)
     GT_SetGadgetAttrs(g->gSoft, g->win, NULL, GTCB_Checked, (ULONG)p->softwarePointer, TAG_END);
     GT_SetGadgetAttrs(g->gPromote, g->win, NULL, GTCB_Checked, (ULONG)p->promote, TAG_END);
     GT_SetGadgetAttrs(g->gUpdates, g->win, NULL, GTCY_Active, (ULONG)(p->updates < UPD_COUNT ? p->updates : 0), TAG_END);
+    GT_SetGadgetAttrs(g->gGamma, g->win, NULL, GTCY_Active, (ULONG)gamma_index(p->gamma), TAG_END);
     {
         /* the size fields follow a custom slot and are ghosted for a fixed one */
         int k = PREFS_SIZE(g->sel) - PREFS_NFIXED;
@@ -524,6 +537,13 @@ static BOOL make_gadgets(struct Gui *g, WORD *innerW, WORD *innerH)
     ng.ng_GadgetText = "Check now"; ng.ng_Flags = PLACETEXT_IN; ng.ng_GadgetID = GAD_CHECK;
     gad = CreateGadget(BUTTON_KIND, gad, &ng, TAG_END);
 
+    /* GAMMA=: the palette's curve (256-colour screens) */
+    y += row;
+    ng.ng_TopEdge = y;
+    ng.ng_GadgetText = "Gamma"; ng.ng_Flags = PLACETEXT_LEFT; ng.ng_GadgetID = GAD_GAMMA;
+    gad = g->gGamma = CreateGadget(CYCLE_KIND, gad, &ng, GTCY_Labels, (ULONG)gammaLabels,
+                                   GTCY_Active, (ULONG)gamma_index(g->prefs.gamma), TAG_END);
+
     /* the mode list at least 12 lines, and as tall as the column beside it */
     listH = y + gh - (ct + fh + 2);
     if (listH < 12 * fh + 4)
@@ -709,6 +729,11 @@ static void event_loop(struct Gui *g)
                     break;
                 case GAD_CHECK:
                     check_update(g);
+                    break;
+                case GAD_GAMMA:
+                    g->prefs.gamma = code < sizeof(gammaValues) ? gammaValues[code] : 10;
+                    set_status(g, g->prefs.gamma == 10 ? "Palettes loaded as they are"
+                                  : "256-colour screens' palettes through this curve (restart PrismD)");
                     break;
                 case GAD_SETSIZE:
                 case GAD_W:                      /* Return in a field: as Set size */
