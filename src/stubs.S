@@ -7,8 +7,6 @@
 | put the registers back from the frame (r->d[0] = the result) and return.
 
         .text
-| every entry starts on 16 bytes: the hottest code in PrismD (every drawing call passes here)
-| landed wherever the files before it ended, and a 4% slower Draw came and went with that
 
 | _inPatch counts the tasks inside a handler, so PrismD can wait for them
 | before it quits (prismd.c ENTER/LEAVE); one instruction each way
@@ -35,7 +33,6 @@
 
         .macro PATCH name
         .globl _stub_\name
-        .balign 16
 _stub_\name:
         BODY \name
         .endm
@@ -49,7 +46,6 @@ _stub_\name:
 | RastPort in rp; tmp is any other address register
         .macro PATCH_RP name, rp, tmp
         .globl _stub_\name
-        .balign 16
 _stub_\name:
         move.l  \tmp,-(sp)
         movea.l 4(\rp),\tmp
@@ -71,7 +67,6 @@ _stub_\name:
 | BitMap in a0
         .macro PATCH_BM name
         .globl _stub_\name
-        .balign 16
 _stub_\name:
         btst    #7,4(a0)
         bne.s   3f
@@ -82,7 +77,6 @@ _stub_\name:
 
 | BltBitMap: source BitMap in a0, destination in a1
         .globl _stub_BltBitMap
-        .balign 16
 _stub_BltBitMap:
         btst    #7,4(a0)
         bne.s   3f
@@ -114,7 +108,6 @@ _stub_BltBitMap:
 | y) with nothing but its arguments saved. It returns the result (0 or -1),
 | or 2 for "not one of mine": then the full handler takes over.
         .globl _stub_WritePixel
-        .balign 16
 _stub_WritePixel:
         move.l  a0,-(sp)
         movea.l 4(a1),a0
@@ -147,7 +140,6 @@ _stub_WritePixel:
 | ReadPixel(rp a1, x d0, y d1): the same short cut, f_ReadPixel returns the
 | pen or -1, or -2 for "not one of mine"
         .globl _stub_ReadPixel
-        .balign 16
 _stub_ReadPixel:
         move.l  a0,-(sp)
         movea.l 4(a1),a0
@@ -206,7 +198,6 @@ _stub_ReadPixel:
 | it first and act afterwards); its d0 goes back into r->d[0] and is
 | returned.
         .globl _call_regs
-        .balign 16
 _call_regs:
         movem.l d2-d7/a2-a6,-(sp)
         move.l  48(sp),a1
