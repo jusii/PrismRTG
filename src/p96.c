@@ -837,7 +837,7 @@ static struct Window *P_PIP_OpenTagList(struct TagItem *tags __asm("a0"))
     if(!p->window) goto fail;
     error=PIPERR_ATTACHFAIL;
     screen=pbm_get(p->window->WScreen->RastPort.BitMap);
-    if(!screen)goto fail;
+    if(!screen || prism_screen_autoscroll(p->window->WScreen))goto fail;   /* an oversized screen is not composed */
     LOCK();
     if (!present_reserve(p->window->WScreen)) {
         ReleaseSemaphore(&lock);error=PIPERR_NOMEMORY;goto fail;
@@ -858,18 +858,21 @@ fail:
 /* ---- video layers (cgxvideo.library): a PIP over a program's own window ---
  * The source bitmap is the caller's; the window stays the caller's too.
  * Indents are the video's distance from the window's inner edges. */
-APTR p96_pip_attach(struct Window *w,struct PBitMap *source,LONG left,LONG top,LONG right,LONG bottom)
+APTR p96_pip_attach(struct Window *w,struct PBitMap *source,UWORD sw,UWORD sh,LONG left,LONG top,LONG right,LONG bottom)
 {
     struct PrismPIP *p;
     UWORD i;
     if(!w || !source || !w->WScreen || !pbm_get(w->WScreen->RastPort.BitMap)) return NULL;
+    if(prism_screen_autoscroll(w->WScreen)) return NULL;     /* not composed (present.c) */
+    if(!sw || sw>source->w) sw=source->w;
+    if(!sh || sh>source->h) sh=source->h;
     if(!(p=AllocVec(sizeof(*p),MEMF_PUBLIC|MEMF_CLEAR))) return NULL;
     p->window=w;p->source=source;
     for(i=0;i<256;i++)p->palette[i]=i*0x010101UL;
     if(!source->rgbTab) source->rgbTab=p->palette;
     p->rel=PIPRel_Width|PIPRel_Height;
     p->left=left;p->top=top;p->width=-(left+right);p->height=-(top+bottom);
-    p->clipwidth=source->w;p->clipheight=source->h;
+    p->clipwidth=sw;p->clipheight=sh;
     LOCK();
     if(!present_reserve(w->WScreen)) { ReleaseSemaphore(&lock);FreeVec(p);return NULL; }
     p->next=pips;pips=p;pipGen++;
@@ -884,6 +887,18 @@ void p96_pip_indent(APTR pip,LONG left,LONG top,LONG right,LONG bottom)
     LOCK();
     p->left=left;p->top=top;p->width=-(left+right);p->height=-(top+bottom);
     pipGen++;
+    ReleaseSemaphore(&lock);
+}
+/* the window of a video layer closed (Intuition's CloseWindow): its PIP
+ * leaves the list; the record stays for p96_pip_detach */
+void p96_pip_window_gone(struct Window *w)
+{
+    struct PrismPIP **link,*p;
+    LOCK();
+    for(link=&pips;(p=*link);) {
+        if(p->window==w) { *link=p->next;p->window=NULL;p->next=NULL;pipGen++; }
+        else link=&p->next;
+    }
     ReleaseSemaphore(&lock);
 }
 void p96_pip_detach(APTR pip)

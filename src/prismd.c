@@ -505,13 +505,26 @@ BOOL prism_autoscroll(struct PrismCard *c, WORD mx, WORD my)
     if (ry < 0) ry = 0;
     if (rx > maxx) rx = maxx < 0 ? 0 : maxx;
     if (ry > maxy) ry = maxy < 0 ? 0 : maxy;
+    /* the Picasso II's display start is in longwords: rx a multiple of
+     * four pixels, rounded towards the pointer so it stays in view */
+    if (rx > ps->rx) rx = (rx + 3) & ~3L; else rx &= ~3L;
+    if (rx > maxx) rx = maxx < 0 ? 0 : (maxx & ~3L);
     if (rx == ps->rx && ry == ps->ry)
         return FALSE;
     ps->rx = rx;
     ps->ry = ry;
-    cs->shownPbm->bd->setDisplayStart(cs->shownPbm->bd, scrolled_start(cs->shownPbm));
-    present_invalidate(c);               /* a composed frame shows another part now */
+    if (!present_ready(c))               /* (a composed frame would be switched off) */
+        cs->shownPbm->bd->setDisplayStart(cs->shownPbm->bd, scrolled_start(cs->shownPbm));
+    present_invalidate(c);
     return TRUE;
+}
+
+static struct PScreen *ps_by_screen(struct Screen *s);
+/* is the screen an oversized (autoscroll) one? for p96.c: no PIPs on it */
+BOOL prism_screen_autoscroll(struct Screen *s)
+{
+    struct PScreen *ps = ps_by_screen(s);
+    return ps && ps->autoscroll;
 }
 
 BOOL prism_display_scroll(struct PrismCard *c, WORD *rx, WORD *ry)
@@ -865,7 +878,7 @@ static void update_display(void)
 static APTR o_NextDisplayInfo, o_FindDisplayInfo, o_GetDisplayInfoData,
             o_ModeNotAvailable, o_OpenMonitor, o_CloseMonitor, o_MakeVPort,
             o_MrgCop, o_LoadView, o_SetRGB32, o_LoadRGB32, o_SetRGB4,
-            o_LoadRGB4, o_OpenScreenTagList, o_OpenScreen, o_CloseScreen, o_ScrollVPort,
+            o_LoadRGB4, o_OpenScreenTagList, o_OpenScreen, o_CloseScreen, o_ScrollVPort, o_CloseWindow,
             o_DisplayAlert, o_TimedDisplayAlert, o_Alert;
 
 #define BASE(b) register APTR _a6 __asm("a6") = (b)
@@ -1512,7 +1525,10 @@ static struct Screen *open_prism_screen(struct ModeRec *mr, struct NewScreen *ns
         if (rh < h) rh = h;
         rw = (rw + 7) & ~7UL;
         m.pitchPixels = rw;
-        if (mr->card->b->checkMode(mr->card->b, &m)) {
+        /* the driver sees the mode's own height (a ZZ9000 looks modes up by
+         * size); the whole bitmap's video memory is checked here */
+        if (mr->card->b->checkMode(mr->card->b, &m) &&
+            (ULONG)m.bytesPerRow * rh <= mr->card->b->vramSize) {
             big = TRUE;
             w = rw;
             h = rh;
@@ -1750,7 +1766,7 @@ static void P_ScrollVPort(struct ViewPort *vp __asm("a0"))
         /* PrismD scrolls it from the pointer (prism_autoscroll); graphics
          * would rebuild a native view for it */
         struct CardState *cs = &cst[ps->mode->card->index];
-        if (cs->shown == ps && cs->shownPbm)
+        if (cs->shown == ps && cs->shownPbm && !present_ready(ps->mode->card))
             cs->shownPbm->bd->setDisplayStart(cs->shownPbm->bd, scrolled_start(cs->shownPbm));
         ReleaseSemaphore(&lock);
         LEAVE();
@@ -1758,6 +1774,17 @@ static void P_ScrollVPort(struct ViewPort *vp __asm("a0"))
     }
     ReleaseSemaphore(&lock);
     c_a0(o_ScrollVPort, GfxBase, vp);
+    LEAVE();
+}
+
+/* CloseWindow(w a0): a video layer (cgxvideo.library) attached to it must
+ * not be composed from a freed window: its PIP record leaves the list now
+ * (the layer's handle keeps the record; DetachVLayer frees it). */
+static void P_CloseWindow(struct Window *w __asm("a0"))
+{
+    ENTER();
+    p96_pip_window_gone(w);
+    c_a0(o_CloseWindow, IntuitionBase, w);
     LEAVE();
 }
 
@@ -2348,6 +2375,7 @@ static struct Patch patches[] = {
     { (struct Library **)&IntuitionBase, -0x264, (APTR)P_OpenScreenTagList, &o_OpenScreenTagList },
     { (struct Library **)&IntuitionBase, -0x0c6, (APTR)P_OpenScreen,   &o_OpenScreen },
     { (struct Library **)&GfxBase,       -0x24c, (APTR)P_ScrollVPort,  &o_ScrollVPort },
+    { (struct Library **)&IntuitionBase, -0x048, (APTR)P_CloseWindow,  &o_CloseWindow },
     { (struct Library **)&IntuitionBase, -0x042, (APTR)P_CloseScreen,  &o_CloseScreen },
     { (struct Library **)&IntuitionBase, -0x05a, (APTR)P_DisplayAlert, &o_DisplayAlert },
     { (struct Library **)&SysBase, -0x06c, (APTR)P_Alert, &o_Alert },

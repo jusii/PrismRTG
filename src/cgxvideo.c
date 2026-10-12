@@ -208,7 +208,7 @@ static ULONG V_AttachVLayerTagList(struct VLayer *v __asm("a0"), struct Window *
     vl_detach(v);
     memset(v->indent, 0, sizeof(v->indent));
     vl_indents(v, tags);
-    if (!(v->pip = p96_pip_attach(w, v->source, v->indent[0], v->indent[1], v->indent[2], v->indent[3])))
+    if (!(v->pip = p96_pip_attach(w, v->source, v->w, v->h, v->indent[0], v->indent[1], v->indent[2], v->indent[3])))
         return 1;
     v->window = w;
     return 0;

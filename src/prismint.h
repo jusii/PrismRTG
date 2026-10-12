@@ -351,7 +351,9 @@ BOOL p96_pip_rows(struct Screen *,WORD screenTop,WORD *y0,WORD *y1);
 BOOL p96_pip_volatile(struct Screen *);
 extern ULONG pipGen;                    /* bumped when a PIP opens, closes or changes */
 /* cgxvideo.library's video layers ride on the PIPs (p96.c) */
-APTR p96_pip_attach(struct Window *w, struct PBitMap *source, LONG left, LONG top, LONG right, LONG bottom);
+APTR p96_pip_attach(struct Window *w, struct PBitMap *source, UWORD sw, UWORD sh, LONG left, LONG top, LONG right, LONG bottom);
+void p96_pip_window_gone(struct Window *w);   /* CloseWindow: its PIPs leave the list */
+BOOL prism_screen_autoscroll(struct Screen *s);
 void p96_pip_indent(APTR pip, LONG left, LONG top, LONG right, LONG bottom);
 void p96_pip_detach(APTR pip);
 

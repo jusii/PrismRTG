@@ -356,8 +356,10 @@ static const struct P2Timing *p2_gtf(const struct PrismMode *m, struct P2Timing 
     hblank = (w * duty10 / (1000 - duty10) + 8) / 16 * 16;
     htotal = w + hblank;
     hsync = ((htotal * 8 / 100) + 4) / 8 * 8;
+    if (hblank / 2 < hsync + 8)          /* small modes: no room for the sync in the blanking */
+        return NULL;
     hfront = hblank / 2 - hsync;
-    if (vtotal > 1023 || htotal > 2080 || hfront < 8)
+    if (vtotal > 1023 || htotal > 2080)
         return NULL;
     memset(t, 0, sizeof(*t));
     t->w = w;  t->h = h;  t->hz = hz;
@@ -371,10 +373,9 @@ static const struct P2Timing *p2_gtf(const struct PrismMode *m, struct P2Timing 
 /* Validate a mode without touching the hardware. Fills m->bytesPerRow and,
  * for SetMode, the timing, SR7 depth bits, HDR value and bytes per pixel. */
 static const struct P2Timing *p2_check(struct PrismBoard *b, struct PrismMode *m,
-                                       UBYTE *sr7, UBYTE *hdr, UBYTE *bppOut)
+                                       UBYTE *sr7, UBYTE *hdr, UBYTE *bppOut, struct P2Timing *scratch)
 {
     struct P2Priv *p = b->priv;
-    static struct P2Timing gtf;      /* one mode is set at a time (lock) */
     const struct P2Timing *t = NULL;
     UWORD i;
     UBYTE bpp;
@@ -386,7 +387,7 @@ static const struct P2Timing *p2_check(struct PrismBoard *b, struct PrismMode *m
             break;
         }
     if (!t)
-        t = p2_gtf(m, &gtf);
+        t = p2_gtf(m, scratch);      /* the caller's: checkMode runs without the lock */
     if (!t)
         return NULL;
 
@@ -428,18 +429,20 @@ static const struct P2Timing *p2_check(struct PrismBoard *b, struct PrismMode *m
 static BOOL p2_CheckMode(struct PrismBoard *b, struct PrismMode *m)
 {
     UBYTE sr7, hdr, bpp;
-    return p2_check(b, m, &sr7, &hdr, &bpp) != NULL;
+    struct P2Timing scratch;
+    return p2_check(b, m, &sr7, &hdr, &bpp, &scratch) != NULL;
 }
 
 static BOOL p2_SetMode(struct PrismBoard *b, struct PrismMode *m)
 {
     struct P2Priv *p = b->priv;
     const struct P2Timing *t;
+    struct P2Timing scratch;
     UWORD i;
     ULONG pitch8;
     UBYTE n, d, bpp;
 
-    if (!(t = p2_check(b, m, &p->sr7, &p->hdr, &bpp)))
+    if (!(t = p2_check(b, m, &p->sr7, &p->hdr, &bpp, &scratch)))
         return FALSE;
     p->bpp = bpp;
     p->width = m->width;

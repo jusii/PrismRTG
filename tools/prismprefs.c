@@ -274,6 +274,12 @@ static void set_size(struct Gui *g)
         set_status(g, "Width 320 to 4096 in steps of 8, height 200 to 4096");
         return;
     }
+    for (k = 0; k < PREFS_NFIXED; k++)
+        if (prefs_sizes[k][0] == w && prefs_sizes[k][1] == h) {
+            set_status(g, "That size is in the list already");
+            return;
+        }
+    k = PREFS_SIZE(g->sel) - PREFS_NFIXED;
     g->prefs.custom[k][0] = w;
     g->prefs.custom[k][1] = h;
     refresh_list(g);
