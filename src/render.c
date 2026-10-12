@@ -1662,6 +1662,8 @@ static __attribute__((noinline)) BOOL line_hw(struct PBitMap *p, WORD x, WORD y,
 {
     UBYTE b = p->bpp, px[4] = { 0, 0, 0, 0 };
     ULONG c;
+    if (!BOARD_CAN(p->bd, line) || (b == 4 && !(p->bd->flags & PBF_BLIT_32)))
+        return FALSE;
     if (b == 1)      c = pen;
     else if (b == 2) c = pixval(p, pen);
     else {
@@ -1696,8 +1698,9 @@ static void line_solid(struct PBitMap *p, struct LineCtx *l, WORD bx0, WORD by0,
         (y < y1 ? y : y1) >= by0 && (y < y1 ? y1 : y) <= by1) {
         /* long enough to be worth a blitter command (a board with a direct
          * drawLine hook was offered the line already: line_direct) */
-        if (BOARD_CAN(p->bd, line) && p->inVram && b != 3 && (dx > 40 || dy > 40) &&
-            (b != 4 || (p->bd->flags & PBF_BLIT_32)) && line_hw(p, x, y, x1, y1, pen))
+        /* (the board tests are line_hw's: p->bd in this function cost the
+         * run-slice loop below its registers - "Line 390x60" -6%) */
+        if (p->inVram && b != 3 && (dx > 40 || dy > 40) && line_hw(p, x, y, x1, y1, pen))
             return;
         line_fast(p, l, ox, oy, pen);
         return;
