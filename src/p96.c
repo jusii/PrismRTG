@@ -777,9 +777,22 @@ static void pen_bytes(struct PBitMap *scr,LONG pen,UBYTE *out)
  * the player paints a colour key */
 static BOOL pip_hw_possible(struct PrismPIP *p,struct PBitMap *scr)
 {
-    return p->keyPen>=0 && prism_hw_overlay() && scr && scr->bd->overlaySet && p->source->inVram &&
+    return prism_hw_overlay() && scr && scr->bd->overlaySet && p->source->inVram &&
            p->source->card==scr->card && (scr->bpp==2 || scr->bpp==4) &&
            PF_IS_YUV(p->source->fmt) && p->source->fmt!=PF_YUV_YUYV;
+}
+
+/* without a colour key the board would paint the whole rectangle, over
+ * any window on top of the player's: only an unobscured window (one
+ * ClipRect, not obscured) may go to the board then */
+static BOOL pip_window_clear(struct Window *w)
+{
+    struct Layer *l=w->WLayer;
+    BOOL clear;
+    if(!l || !AttemptSemaphore(&l->Lock)) return FALSE;
+    clear=l->ClipRect && !l->ClipRect->Next && !l->ClipRect->obscured;
+    ReleaseSemaphore(&l->Lock);
+    return clear;
 }
 
 static void pip_hw_off(struct PrismPIP *p)
@@ -808,7 +821,8 @@ void p96_pip_hw_tick(void)
         if(!p->hw || !w) continue;
         scr=pbm_get(w->WScreen->RastPort.BitMap);
         bd=p->source->bd;
-        if(!scr || scr->bd!=bd || !pbm_is_shown(scr) || prism_dragging() || used[scr->card->index]) {
+        if(!scr || scr->bd!=bd || !pbm_is_shown(scr) || prism_dragging() || used[scr->card->index] ||
+           (p->keyPen<0 && !pip_window_clear(w))) {
             pip_hw_off(p);
             continue;
         }
@@ -828,9 +842,9 @@ void p96_pip_hw_tick(void)
         o.srcPitch=p->source->bpr;
         o.srcW=p->clipwidth;o.srcH=p->clipheight;
         o.srcFormat=p->source->fmt;
-        o.keyed=1;
+        o.keyed=p->keyPen>=0;
         o.screenBpp=scr->bpp;
-        pen_bytes(scr,p->keyPen,o.key);
+        if(o.keyed) pen_bytes(scr,p->keyPen,o.key);
         o.dstX=left;o.dstY=top;o.dstW=width;o.dstH=height;
         used[scr->card->index]=1;
         if(p->hwOn && !memcmp(&o,&p->ov,sizeof(o))) continue;
