@@ -639,6 +639,10 @@ int main(void)
         say("PrismUpdate: update checks are off (UPDATES= in the prefs, or SOURCE=)\n");
         goto done;
     }
+    if (source == UPD_MIRROR && !mirror[0]) {
+        say("PrismUpdate: no mirror is set (MIRROR= in the prefs)\n");
+        goto done;
+    }
     ver_parse(PRISM_RELEASE, &mine);
 
     if (!(SocketBase = OpenLibrary((STRPTR)"bsdsocket.library", 4))) {
