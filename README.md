@@ -462,8 +462,10 @@ finished `.info` files in `dist/`.
 | `PrismScreen`, `PrismShow`, `PrismMouse`, `prismdiag` | Test clients: screens, pictures, pointer, display database dump. |
 | `ddcprobe`, `zztime`, `iotime`, `memwhere`, `p2peek` | Hardware probes and timing tools. |
 
-[docs/design.md](docs/design.md) has the architecture, how each part was
-built, and every measurement; [docs/zz9000-hw.md](docs/zz9000-hw.md) and
+[docs/architecture.md](docs/architecture.md) is the technical overview:
+what runs, what is patched, and how a drawing call travels from a program
+to the card. [docs/design.md](docs/design.md) has how each part was
+built, in order, and every measurement; [docs/zz9000-hw.md](docs/zz9000-hw.md) and
 [docs/cirrus-picasso2-hw.md](docs/cirrus-picasso2-hw.md) are the hardware
 notes the drivers were written from.
 
