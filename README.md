@@ -130,15 +130,15 @@ Tested in WinUAE 6.0.3 at 8, 16 and 32 bits (every PrismRTG test and
 |---|---|---|
 | WinUAE, Picasso II / II+, Piccolo, Piccolo SD64, Spectrum (Zorro II and III) | Auto | Tested: every PrismRTG test passes on each; the figures per board are in [docs/emulated-cards.md](docs/emulated-cards.md) |
 | WinUAE 6.0.3, UAE RTG Zorro III or Zorro II | UAE (native), or P96 driver with `P96CARD=uaegfx.card` | Tested at 8, 16 and 32 bits: every test passes |
-| Amiberry 8.3.0 (Linux), UAE RTG | UAE (native) | With Amiberry's defaults every test passes at 8, 16 and 32 bits. With `rtg_nocustom=false` and ZeroCopy on, 32-bit screens lose some of what is drawn ([amiberry#2392](https://github.com/BlitterStudio/amiberry/issues/2392)) - keep `rtg_nocustom` at its default (true) or turn ZeroCopy off |
+| Amiberry 8.4.0 (Linux), UAE RTG | UAE (native) | Tested at 8, 16 and 32 bits: every test passes, with `rtg_nocustom=false` too. (8.3.0 lost some of what was drawn on 32-bit screens with `rtg_nocustom=false` and ZeroCopy on, [amiberry#2392](https://github.com/BlitterStudio/amiberry/issues/2392); fixed in 8.4.0) |
+| Amiberry 8.4.0 (Linux), ZZ9000 (Zorro III) | Auto | Tested: Workbench and every PrismRTG test pass, from beta 6 on (earlier PrismD builds switched the display on and off inside one frame at start-up, which 8.4.0 does not survive) |
 | Amiberry inside RetroArch (libretro) | UAE (native) | Not tested. The libretro build has no RTG hardware pointer, so PrismRTG draws its software pointer (tested with WinUAE's hardware sprite turned off) |
 | FS-UAE 3.1.66 (Linux), UAE RTG | UAE (native), or P96 driver with `P96CARD=uaegfx.card` | Tested at 8, 16 and 32 bits: every test passes, both ways. FS-UAE 3.1 cannot open files that are read-only on the host, so a system folder shared from Windows with read-only files will not boot until the attribute is cleared |
 | MiSTer (FPGA), ZZ9000 core | Auto (ZZ9000) | Reported working with no pointer and garbled text in the Shell (issue #2); `SOFTWAREPOINTER=ON` in `ENV:Prism.prefs` should give a pointer (not tested on a MiSTer yet) |
 
 UAE's RTG card needs its hardware pointer ("Hardware sprite emulation" in the
 RTG settings): PrismRTG draws no pointer of its own. WinUAE has it on by
-default; Amiberry from the version after 8.3.0 too, and in 8.3.0 it has to be
-switched on.
+default, and so has Amiberry from 8.4.0 on; in 8.3.0 it has to be switched on.
 
 ## What works
 
@@ -466,8 +466,9 @@ noted in every commit. With thanks to:
   screen dragging and PIP composition (#10).
 * **Dimitris Panokostas** (midwan, author of Amiberry) - reviewed the UAE
   driver and found its `SetPanning` / `BitMapExtra` bug (#5), and made
-  Amiberry's RTG hardware pointer the default so PrismRTG shows a pointer
-  there ([amiberry#2388](https://github.com/BlitterStudio/amiberry/pull/2388)).
+  Amiberry's RTG hardware pointer the default (8.4.0) so PrismRTG shows a
+  pointer there ([amiberry#2388](https://github.com/BlitterStudio/amiberry/pull/2388)),
+  and fixed the 32-bit write-back ([amiberry#2392](https://github.com/BlitterStudio/amiberry/issues/2392)).
 * **polluks** and **yelworC** - the first test on a MiSTer FPGA (#2).
 * **HANSolo-0007** - the first real card through the P96 adapter, an Apollo
   Vampire, with PrismCheck reports and the findings behind beta 5's

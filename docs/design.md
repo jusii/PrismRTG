@@ -1484,6 +1484,9 @@ as Zorro II.
   locks the bitmap and writes the memory itself); it looks like the emulator
   writing an older copy of the frame back. The test program is
   `tools/vramcheck` (`vramcheck $7A000301 8`, with PrismD running).
+  Reported as amiberry#2392, fixed by Dimitris for 8.4.0: there vramcheck is
+  0 of 200 and tmpltest passes at 32 bits with `rtg_nocustom=false`
+  (2026-10-12).
 - **Found on the way, a PrismRTG bug**: PrismRTG waited for the blitter with
   WaitBlit() before reading planar memory the blitter may still be drawing (the
   mask of AreaEnd and Flood, templates). WaitBlit() only waits for the running
