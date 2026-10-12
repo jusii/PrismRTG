@@ -2601,6 +2601,11 @@ static BOOL init_card(UBYTE k)
     }
     if (prefs.blitter && B->modeReady) B->modeReady(B);
     selftest_text(&cards[k]);
+    /* the board shows the first mode for a moment before the switch goes
+     * back to the Amiga: Amiberry 8.4's ZZ9000 corrupts its heap and dies
+     * when the RTG display is switched on and off inside one frame (seen
+     * at every boot, 2026-10-12); two frames cost nothing on a real card */
+    Delay(2);
     B->setSwitch(B, FALSE);
     cs->curMode = &cs->modes[0];
     /* A copy of the system's monitor, but with a list and a semaphore of
