@@ -222,6 +222,9 @@
     (copyfiles (source "PrismUpdate") (dest "C:") (nogauge)))
 (copyfiles (source "Prism") (dest mon) (infos) (nogauge))
 (copyfiles (source "PrismPrefs") (dest "SYS:Prefs") (infos) (nogauge))
+; translations of the tools' texts, when the package has any
+(if (exists "Catalogs")
+    (copyfiles (source "Catalogs") (dest "LOCALE:Catalogs") (all) (nogauge)))
 ; an archive unpacked by some tools loses the "executable" bit
 (run "Protect >NIL: C:PrismD +e")
 (run "Protect >NIL: C:PrismSetup +e")

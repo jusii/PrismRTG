@@ -20,6 +20,13 @@ cp out/PrismD out/PrismPrefs out/PrismSetup out/PrismProbe out/Picasso96API.libr
 # without it has no update check
 [ -f out/PrismUpdate ] && cp out/PrismUpdate $P/ || echo "mkpkg: no PrismUpdate in this package"
 cp out/PrismMon $P/Prism
+# translations: every catalogs/<language>.ct becomes Catalogs/<language>/PrismRTG.catalog
+for ct in catalogs/*.ct; do
+    [ -f "$ct" ] || continue
+    lang=$(basename "$ct" .ct)
+    mkdir -p "$P/Catalogs/$lang"
+    python3 tools/mkcatalog.py --build "$ct" "$P/Catalogs/$lang/PrismRTG.catalog"
+done
 cp dist/Install_PrismRTG dist/ReadMe LICENSE $P/
 cp dist/Install_PrismRTG.info dist/Prism.info dist/PrismPrefs.info dist/ReadMe.info $P/
 # the drawer's own icon goes BESIDE it, or Workbench doesn't show the drawer

@@ -332,6 +332,15 @@ If the screen stays dark: hold the left mouse button during boot, then use
 PrismPrefs to switch a mode off, change its refresh rate or turn the
 blitter off.
 
+### Translations
+
+PrismPrefs and PrismSetup take their texts from a locale.library catalog
+when one is installed for your language (`LOCALE:Catalogs/<language>/
+PrismRTG.catalog`), English otherwise; `SetEnv PRISMLANG <language>`
+picks one for PrismRTG's tools alone. There are no translations yet:
+[docs/translating.md](docs/translating.md) says how to make one from
+`catalogs/PrismRTG.cd`, and a partial one is welcome.
+
 ## Known limits
 
 * Tested on two machines by one person. Treat it as early software.

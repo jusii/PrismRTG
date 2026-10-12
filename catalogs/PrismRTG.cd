@@ -1,0 +1,398 @@
+; PrismRTG.cd - the texts of PrismRTG's tools, for translators (CatComp style).
+; Written by tools/mkcatalog.py from the sources; the numbers never change.
+; A translation is a .ct next to it: catalogs/deutsch.ct, compiled with mkcatalog.py --build.
+## version 1
+ID_0_8 (1//)
+0.8
+;
+ID_1_0_OFF (2//)
+1.0 (off)
+;
+ID_1_2 (3//)
+1.2
+;
+ID_1_4 (4//)
+1.4
+;
+ID_1_6 (5//)
+1.6
+;
+ID_1_8 (6//)
+1.8
+;
+ID_256_COLOUR_PALETTES_LOADED_RED_FIRST_NOR (7//)
+256-colour palettes loaded red first (normal)
+;
+ID_256_COLOUR_SCREENS_PALETTES_THROUGH_THIS (8//)
+256-colour screens' palettes through this curve (restart PrismD)
+;
+ID_2_0 (9//)
+2.0
+;
+ID_60_HZ (10//)
+60 Hz
+;
+ID_70_HZ (11//)
+70 Hz
+;
+ID_72_HZ (12//)
+72 Hz
+;
+ID_75_HZ (13//)
+75 Hz
+;
+ID_ASKING_FOR_THE_LATEST_RELEASE (14//)
+Asking for the latest release...
+;
+ID_AUTO (15//)
+Auto
+;
+ID_AUTO_1_BOARD (16//)
+Auto, 1 board
+;
+ID_AUTO_EVERY_BOARD_PRISMD_FINDS_TWO_AT_MOS (17//)
+Auto: every board PrismD finds (two at most)
+;
+ID_AUTO_SWAPPED (18//)
+Auto, swapped
+;
+ID_AUTO_SWAPPED_THE_SECOND_BOARD_FOUND_IS_T (19//)
+Auto, swapped: the second board found is the primary
+;
+ID_A_TEST_IS_ALREADY_SHOWING (20//)
+A test is already showing.
+;
+ID_BOARD (21//)
+Board
+;
+ID_BOARD_S_OWN_POINTER_WHERE_IT_HAS_ONE (22//)
+Board's own pointer where it has one
+;
+ID_CANCEL (23//)
+Cancel
+;
+ID_CAN_T_WRITE_ENVARC_PRISM_PREFS (24//)
+Can't write ENVARC:Prism.prefs
+;
+ID_CAN_T_WRITE_ENV_PRISM_PREFS (25//)
+Can't write ENV:Prism.prefs
+;
+ID_CHECK_NOW (26//)
+Check now
+;
+ID_CHECK_NOW_ASKS_GITHUB_S_RELEASES_NEEDS_A (27//)
+Check now asks GitHub's releases (needs AmiSSL 5)
+;
+ID_CHECK_NOW_ASKS_GITHUB_THEN_THE_MIRROR (28//)
+Check now asks GitHub, then the mirror
+;
+ID_CHECK_NOW_ASKS_THE_MIRROR_MIRROR_IN_THE (29//)
+Check now asks the mirror (MIRROR= in the prefs file)
+;
+ID_COULD_NOT_BE_MOVED_ERROR_D (30//)
+  %s could not be moved (error %ld)
+
+;
+ID_C_PRISMUPDATE_IS_NOT_INSTALLED (31//)
+C:PrismUpdate is not installed
+;
+ID_DEFAULT (32//)
+Default
+;
+ID_DEFAULTS (33//)
+Defaults
+;
+ID_DEFAULTS_EVERY_MODE_THE_BOARD_CAN_SHOW (34//)
+Defaults - every mode the board can show
+;
+ID_DID_THE_TEST_PICTURE_LOOK_RIGHT (35//)
+Did the test picture for
+%s
+look right on your monitor?
+;
+ID_DRAG_SCREENS (36//)
+Drag screens
+;
+ID_FIRST_SECOND_CANCEL (37//)
+First|Second|Cancel
+;
+ID_FOR_A_BOARD_WHOSE_256_COLOUR_SCREENS_SHO (38//)
+For a board whose 256-colour screens show red as blue
+;
+ID_FROM_TO (39//)
+  %s -> %s
+
+;
+ID_GAMMA (40//)
+Gamma
+;
+ID_GITHUB (41//)
+GitHub
+;
+ID_GITHUB_THEN_MIRROR (42//)
+GitHub, then mirror
+;
+ID_GIVE_A_PROGRAM_NAME_31_CHARACTERS_AT_MOS (43//)
+Give a program name (31 characters at most); the list holds 16
+;
+ID_GIVE_THIS_CUSTOM_SLOT_A_SIZE_FIRST_WIDTH (44//)
+Give this custom slot a size first (Width, Height, Set size)
+;
+ID_HEIGHT (45//)
+Height
+;
+ID_KEEP (46//)
+Keep
+;
+ID_KEPT (47//)
+kept
+;
+ID_KEPT_ON_THE_CHIPSET_WHATEVER_THE_SWITCH (48//)
+Kept on the chipset whatever the switch says
+;
+ID_LIVE (49//)
+live
+;
+ID_LIVE_1 (50//)
+live 1
+;
+ID_LIVE_1_2 (51//)
+live 1+2
+;
+ID_LIVE_2 (52//)
+live 2
+;
+ID_LOG (53//)
+Log
+;
+ID_LOG_OFF (54//)
+Log off
+;
+ID_MIRROR (55//)
+Mirror
+;
+ID_MODES (56//)
+Modes
+;
+ID_MODE_SWITCHED_OFF_SAVE_OR_USE_TO_KEEP_TH (57//)
+Mode switched off. Save or Use to keep that.
+;
+ID_MODE_TESTED (58//)
+Mode tested.
+;
+ID_NOT_ENOUGH_VIDEO_MEMORY_FREE_FOR_THE_TES (59//)
+Not enough video memory free for the test.
+;
+ID_NO_UPDATE_CHECKS (60//)
+No update checks
+;
+ID_OFF (61//)
+Off
+;
+ID_OFFERED (62//)
+Offered
+;
+ID_ON (63//)
+On
+;
+ID_ON_LOWER (64//)
+on
+;
+ID_ON_PRISMD_WRITES_ITS_LOG_TO_T_PRISMD_LOG (65//)
+On: PrismD writes its log to T:PrismD.log
+;
+ID_OTHER_BOARD_IN_THE_PREFS_FILE (66//)
+Other (BOARD= in the prefs file)
+;
+ID_P96_DRIVER (67//)
+P96 driver
+;
+ID_PALETTES_LOADED_AS_THEY_ARE (68//)
+Palettes loaded as they are
+;
+ID_PICASSO_II (69//)
+Picasso II
+;
+ID_PICK_ONE_OF_THE_FOUR_CUSTOM_ENTRIES_IN_T (70//)
+Pick one of the four custom entries in the list first
+;
+ID_POINTER_DRAWN_BY_PRISMRTG_FOR_BOARDS_WIT (71//)
+Pointer drawn by PrismRTG (for boards without one)
+;
+ID_PRIMARY_FROM_THE_NEXT_START (72//)
+Primary from the next start: %.20s @%08lx
+;
+ID_PRISMD_MODES_NEW_SETTINGS (73//)
+PrismD: %.24s, %lu modes. New settings: restart it.
+;
+ID_PRISMD_TWO_BOARDS_NEW_SETTINGS (74//)
+PrismD: %.18s + %.18s. New settings: restart it.
+;
+ID_PRISMRTG_PREFERENCES (75//)
+PrismRTG Preferences
+;
+ID_PRISMSETUP_CAN_T_WRITE (76//)
+PrismSetup: can't write %s
+
+;
+ID_PRISMSETUP_CARD_PICASSO96_MONITOR (77//)
+PrismSetup: card %d (%s), Picasso96 monitor "%s"
+
+;
+ID_PRISMSETUP_MOVED_TO_NOT (78//)
+PrismSetup: %d moved to %s, %d not
+
+;
+ID_PRISMSETUP_NOTHING_PARKED_NOT_FOUND (79//)
+PrismSetup: nothing parked (%s not found)
+
+;
+ID_PRISMSETUP_NO_PICASSO96_FOUND (80//)
+PrismSetup: no Picasso96 found
+
+;
+ID_PRISMSETUP_PUT_BACK_STILL_IN (81//)
+PrismSetup: %d put back, %d still in %s
+
+;
+ID_PRISMSETUP_SLOT_D_IS_A_CUSTOM_SIZE_THAT (82//)
+PrismSetup: slot %ld is a custom size that is not set
+
+;
+ID_PRISMSETUP_WBID_IS_NOT_A_PRISMRTG_MODE (83//)
+PrismSetup: WBID %s is not a PrismRTG mode
+
+;
+ID_PRISMSETUP_WBMODE_TAKES_A_MODE_SLOT_0_TO (84//)
+PrismSetup: WBMODE takes a mode slot, 0 to %d
+
+;
+ID_PRISMSETUP_WORKBENCH_MODE_SET_TO_X_X (85//)
+PrismSetup: Workbench mode set to $%08lx (%ux%u)
+
+;
+ID_PRISM_MODE_TEST (86//)
+Prism mode test
+;
+ID_PROGRAM (87//)
+Program
+;
+ID_PROGRAMS (88//)
+Programs
+;
+ID_PROMOTE (89//)
+Promote
+;
+ID_PROMOTED (90//)
+promoted
+;
+ID_PROMOTED_TO_THE_BOARD_WHATEVER_THE_SWITC (91//)
+Promoted to the board whatever the switch says
+;
+ID_PROMOTE_SCREENS (92//)
+Promote screens
+;
+ID_REFRESH (93//)
+Refresh
+;
+ID_REMOVE (94//)
+Remove
+;
+ID_SAVE (95//)
+Save
+;
+ID_SCREENS_ASKED_FOR_ON_THE_CHIPSET_OPEN_ON (96//)
+Screens asked for on the chipset open on the board (kept ones stay)
+;
+ID_SCREENS_STAY_ON_THE_CHIPSET_PROMOTED_PRO (97//)
+Screens stay on the chipset (promoted programs still move)
+;
+ID_SCREEN_DRAGGING_OFF (98//)
+Screen dragging off
+;
+ID_SCREEN_DRAGGING_ON_EXPERIMENTAL_SLOWER_D (99//)
+Screen dragging on (experimental, slower drawing)
+;
+ID_SET_SIZE (100//)
+Set size
+;
+ID_SET_TEST_SHOWS_IT_NOW_PRISMD_OFFERS_IT_A (101//)
+Set. Test shows it now; PrismD offers it after a restart (if the board can)
+;
+ID_SHOWN (102//)
+shown
+;
+ID_SHOW_THE_TEST_PICTURE_ON_WHICH_BOARD (103//)
+Show the test picture on which board?
+;
+ID_SOFT_POINTER (104//)
+Soft pointer
+;
+ID_STAYS_IS_IN_THE_WAY (105//)
+  %s stays: %s is in the way
+
+;
+ID_STAYS_PARKED_IS_TAKEN (106//)
+  %s stays parked: %s is taken
+
+;
+ID_SWAP_RED_BLUE (107//)
+Swap red/blue
+;
+ID_SYNC (108//)
+Sync
+;
+ID_SYNC_LOG_WRITTEN_TO_SYS_PRISMD_LOG_AT_ON (109//)
+Sync: log written to SYS:PrismD.log at once (slow)
+;
+ID_TEST (110//)
+Test
+;
+ID_TEST_NEEDS_PRISM_RUNNING_RESTART_WITH_PR (111//)
+Test needs Prism running (restart with Prism installed).
+;
+ID_THAT_SIZE_IS_IN_THE_LIST_ALREADY (112//)
+That size is in the list already
+;
+ID_THE_CARD_CAN_T_SHOW_THAT_MODE_AT_THAT_RA (113//)
+The card can't show that mode at that rate.
+;
+ID_THE_UPDATE_RUNS_IN_ITS_OWN_WINDOW (114//)
+The update runs in its own window
+;
+ID_UAE_NATIVE (115//)
+UAE (native)
+;
+ID_UPDATES (116//)
+Updates
+;
+ID_UPDATES_ARE_OFF_CHOOSE_GITHUB_OR_A_MIRRO (117//)
+Updates are off: choose GitHub or a mirror first
+;
+ID_USE (118//)
+Use
+;
+ID_USE_BLITTER (119//)
+Use blitter
+;
+ID_VIDEO_LAYERS_COMPOSED_BY_PRISMRTG_ON_THE (120//)
+Video layers composed by PrismRTG on the CPU
+;
+ID_VIDEO_LAYERS_SHOWN_BY_THE_BOARD_WHERE_IT (121//)
+Video layers shown by the board where it can (ZZ9000)
+;
+ID_VIDEO_ON_BOARD (122//)
+Video on board
+;
+ID_WIDTH (123//)
+Width
+;
+ID_WIDTH_320_TO_4096_IN_STEPS_OF_8_HEIGHT_2 (124//)
+Width 320 to 4096 in steps of 8, height 200 to 4096
+;
+ID_YES_NO_SWITCH_IT_OFF (125//)
+Yes|No, switch it off
+;
+ID_ZZ9000 (126//)
+ZZ9000
+;

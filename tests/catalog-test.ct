@@ -1,0 +1,22 @@
+## version 12.10.26
+## language deutsch
+; tests/catalog-test.ct - a few texts for tests/catalog.sh and the emulator check of the
+; translation path. Not a translation: a real German catalog starts from catalogs/PrismRTG.cd.
+ID_USE_BLITTER
+Blitter benutzen
+;
+ID_CANCEL
+Abbrechen
+;
+ID_DEFAULTS
+Vorgaben
+;
+ID_PROMOTE_SCREENS
+Screens umleiten
+;
+ID_PRISMRTG_PREFERENCES
+PrismRTG-Einstellungen
+;
+ID_SHOWN
+gezeigt
+;

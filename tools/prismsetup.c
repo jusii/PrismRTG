@@ -56,6 +56,7 @@
 #include <stdlib.h>
 #include "../src/prism.h"
 #include "../src/prefs.h"
+#include "../src/catalog.h"
 
 static const char version[] __attribute__((used)) = "$VER: PrismSetup " PRISM_RELEASE " (" PRISM_RELDATE ")";
 
@@ -254,7 +255,7 @@ static int p96_park(void)
 
     p96_scan();
     if (!npieces) {
-        printf("PrismSetup: no Picasso96 found\n");
+        printf(S(ID_PRISMSETUP_NO_PICASSO96_FOUND, "PrismSetup: no Picasso96 found\n"));
         return 0;
     }
     make_dir("SYS:Storage");
@@ -262,25 +263,25 @@ static int p96_park(void)
     make_dir(PARK_DIR "/Monitors");
     make_dir(PARK_DIR "/Libs");
     if (!(mf = Open(MANIFEST, MODE_READWRITE))) {
-        printf("PrismSetup: can't write %s\n", MANIFEST);
+        printf(S(ID_PRISMSETUP_CAN_T_WRITE, "PrismSetup: can't write %s\n"), MANIFEST);
         return 5;
     }
     Seek(mf, 0, OFFSET_END);
     for (i = 0; i < npieces; i++) {
         if (there(pieces[i].to)) {                /* parked before and installed again */
-            printf("  %s stays: %s is in the way\n", pieces[i].from, pieces[i].to);
+            printf(S(ID_STAYS_IS_IN_THE_WAY, "  %s stays: %s is in the way\n"), pieces[i].from, pieces[i].to);
             failed++;
         } else if (Rename(pieces[i].from, pieces[i].to)) {
             FPrintf(mf, "%s\t%s\n", (LONG)pieces[i].to, (LONG)pieces[i].from);
-            printf("  %s -> %s\n", pieces[i].from, pieces[i].to);
+            printf(S(ID_FROM_TO, "  %s -> %s\n"), pieces[i].from, pieces[i].to);
             moved++;
         } else {
-            printf("  %s could not be moved (error %ld)\n", pieces[i].from, (long)IoErr());
+            printf(S(ID_COULD_NOT_BE_MOVED_ERROR_D, "  %s could not be moved (error %ld)\n"), pieces[i].from, (long)IoErr());
             failed++;
         }
     }
     Close(mf);
-    printf("PrismSetup: %d moved to %s, %d not\n", moved, PARK_DIR, failed);
+    printf(S(ID_PRISMSETUP_MOVED_TO_NOT, "PrismSetup: %d moved to %s, %d not\n"), moved, PARK_DIR, failed);
     return failed ? 5 : 0;
 }
 
@@ -291,7 +292,7 @@ static int p96_restore(void)
     int back = 0, left = 0;
 
     if (!(mf = Open(MANIFEST, MODE_OLDFILE))) {
-        printf("PrismSetup: nothing parked (%s not found)\n", MANIFEST);
+        printf(S(ID_PRISMSETUP_NOTHING_PARKED_NOT_FOUND, "PrismSetup: nothing parked (%s not found)\n"), MANIFEST);
         return 0;
     }
     while (FGets(mf, line, sizeof(line))) {
@@ -306,10 +307,10 @@ static int p96_restore(void)
          * that name in another of them is not in the way - Rename fails by
          * itself if the place really is taken) */
         if (Rename(line, tab)) {
-            printf("  %s -> %s\n", line, tab);
+            printf(S(ID_FROM_TO, "  %s -> %s\n"), line, tab);
             back++;
         } else {
-            printf("  %s stays parked: %s is taken\n", line, tab);
+            printf(S(ID_STAYS_PARKED_IS_TAKEN, "  %s stays parked: %s is taken\n"), line, tab);
             left++;
         }
     }
@@ -320,7 +321,7 @@ static int p96_restore(void)
         DeleteFile(PARK_DIR "/Libs");
         DeleteFile(PARK_DIR);
     }
-    printf("PrismSetup: %d put back, %d still in %s\n", back, left, PARK_DIR);
+    printf(S(ID_PRISMSETUP_PUT_BACK_STILL_IN, "PrismSetup: %d put back, %d still in %s\n"), back, left, PARK_DIR);
     return left ? 5 : 0;
 }
 
@@ -378,7 +379,7 @@ static int detect(void)
         setenv_str("PrismP96", cnt);
         setenv_str("PrismP96List", list);
     }
-    printf("PrismSetup: card %d (%s), Picasso96 monitor \"%s\"\n", card,
+    printf(S(ID_PRISMSETUP_CARD_PICASSO96_MONITOR, "PrismSetup: card %d (%s), Picasso96 monitor \"%s\"\n"), card,
            card ? names[card] : "none", mon);
     return card;
 }
@@ -400,12 +401,12 @@ static int write_wbmode(LONG slot)
         prefs_load(&prefs, PREFS_ENV);
 
     if (slot < 0 || slot >= PREFS_NMODES) {
-        printf("PrismSetup: WBMODE takes a mode slot, 0 to %d\n", PREFS_NMODES - 1);
+        printf(S(ID_PRISMSETUP_WBMODE_TAKES_A_MODE_SLOT_0_TO, "PrismSetup: WBMODE takes a mode slot, 0 to %d\n"), PREFS_NMODES - 1);
         return 10;
     }
     id = PRISM_MONITOR_ID | PREFS_IDLOW(slot);
     if (!prefs_size(&prefs, slot, &w, &h)) {
-        printf("PrismSetup: slot %ld is a custom size that is not set\n", (long)slot);
+        printf(S(ID_PRISMSETUP_SLOT_D_IS_A_CUSTOM_SIZE_THAT, "PrismSetup: slot %ld is a custom size that is not set\n"), (long)slot);
         return 10;
     }
     memset(f, 0, sizeof(f));
@@ -420,13 +421,13 @@ static int write_wbmode(LONG slot)
     for (i = 0; i < 1; i++) {
         BPTR fh = Open((STRPTR)files[i], MODE_NEWFILE);
         if (!fh || Write(fh, f, sizeof(f)) != sizeof(f)) {
-            printf("PrismSetup: can't write %s\n", files[i]);
+            printf(S(ID_PRISMSETUP_CAN_T_WRITE, "PrismSetup: can't write %s\n"), files[i]);
             rc = 10;
         }
         if (fh) Close(fh);
     }
     if (!rc)
-        printf("PrismSetup: Workbench mode set to $%08lx (%ux%u)\n", (unsigned long)id, w, h);
+        printf(S(ID_PRISMSETUP_WORKBENCH_MODE_SET_TO_X_X, "PrismSetup: Workbench mode set to $%08lx (%ux%u)\n"), (unsigned long)id, w, h);
     return rc;
 }
 
@@ -440,6 +441,7 @@ int main(void)
         PrintFault(IoErr(), "PrismSetup");
         return 20;
     }
+    cat_open();                              /* the texts: a translation, or the English */
     if (args[4]) {
         /* $0102, 0x0102, 0102 or the whole $7A000102: depth slot, size slot */
         const char *a = (const char *)args[4];
@@ -450,7 +452,7 @@ int main(void)
         depth = id >> 8;
         size = id & 0xff;
         if (depth >= PREFS_NDEPTHS || size >= PREFS_NSIZES) {
-            printf("PrismSetup: WBID %s is not a PrismRTG mode\n", (const char *)args[4]);
+            printf(S(ID_PRISMSETUP_WBID_IS_NOT_A_PRISMRTG_MODE, "PrismSetup: WBID %s is not a PrismRTG mode\n"), (const char *)args[4]);
             rc = 10;
         } else
             rc = write_wbmode((LONG)(depth * PREFS_NSIZES + size));
@@ -463,5 +465,6 @@ int main(void)
     else
         rc = detect();
     FreeArgs(rda);
+    cat_close();
     return rc;
 }
