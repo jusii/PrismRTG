@@ -10,7 +10,7 @@ set -e
 export PATH=/opt/amiga/bin:$PATH
 
 CC=m68k-amigaos-gcc
-CFLAGS="-DPRISM_DEBUG -O2 -m68020-60 -noixemul -Wall -Wno-pointer-sign -fomit-frame-pointer -Isrc -Isrc/p96sdk"
+CFLAGS="-DPRISM_DEBUG -O2 -fno-tree-loop-distribute-patterns -m68020-60 -noixemul -Wall -Wno-pointer-sign -fomit-frame-pointer -Isrc -Isrc/p96sdk"
 # PrismD and the driver modules: leave out functions nothing calls (debug helpers etc.)
 GC="-ffunction-sections -fdata-sections -Wl,--gc-sections"
 
