@@ -784,23 +784,33 @@ static BOOL pip_hw_possible(struct PrismPIP *p,struct PBitMap *scr)
 
 /* without a colour key the board would paint the whole rectangle, over
  * any window on top of the player's: only an unobscured window (one
- * ClipRect, not obscured) may go to the board then */
-static BOOL pip_window_clear(struct Window *w)
+ * ClipRect, not obscured) may go to the board then. 1 clear, 0 covered,
+ * -1 the layer is busy (being drawn into): no answer this frame */
+static WORD pip_window_clear(struct Window *w)
 {
     struct Layer *l=w->WLayer;
-    BOOL clear;
-    if(!l || !AttemptSemaphore(&l->Lock)) return FALSE;
+    WORD clear;
+    if(!l) return 0;
+    if(!AttemptSemaphore(&l->Lock)) return -1;
     clear=l->ClipRect && !l->ClipRect->Next && !l->ClipRect->obscured;
     ReleaseSemaphore(&l->Lock);
     return clear;
 }
 
+/* the PIP each board's overlay shows (one overlay per board): only its
+ * owner may take it down, so a second layer on the same board stays on
+ * the compositor instead of switching the first one off */
+static struct PrismPIP *ovOwner[2];
+
 static void pip_hw_off(struct PrismPIP *p)
 {
-    if(p->hwOn) {
-        p->source->bd->overlayOff(p->source->bd);
-        p->hwOn=0;pipGen++;
-    }
+    UWORD k;
+    for(k=0;k<2;k++)
+        if(ovOwner[k]==p) {
+            p->source->bd->overlayOff(p->source->bd);
+            ovOwner[k]=NULL;
+        }
+    if(p->hwOn) { p->hwOn=0;pipGen++; }
 }
 
 /* once a frame (PrismD's loop): a layer the board may show follows its
@@ -809,7 +819,6 @@ static void pip_hw_off(struct PrismPIP *p)
 void p96_pip_hw_tick(void)
 {
     struct PrismPIP *p;
-    UBYTE used[2]={0,0};                    /* one overlay per board */
     if(!pips) return;
     LOCK();
     for(p=pips;p;p=p->next) {
@@ -817,23 +826,30 @@ void p96_pip_hw_tick(void)
         struct PBitMap *scr;
         struct PrismBoard *bd;
         struct PrismOverlay o;
-        LONG iw,ih,left,top,width,height;
+        LONG iw,ih,ix,iy,left,top,width,height;
+        UBYTE k;
+        WORD clear=1;
         if(!p->hw || !w) continue;
         scr=pbm_get(w->WScreen->RastPort.BitMap);
         bd=p->source->bd;
-        if(!scr || scr->bd!=bd || !pbm_is_shown(scr) || prism_dragging() || used[scr->card->index] ||
-           (p->keyPen<0 && !pip_window_clear(w))) {
-            pip_hw_off(p);
-            continue;
-        }
+        if(!scr || scr->bd!=bd) { pip_hw_off(p); continue; }
+        k=scr->card->index;
+        if(ovOwner[k] && ovOwner[k]!=p) continue;     /* the board shows another layer: this one is composed */
+        if(p->keyPen<0 && (clear=pip_window_clear(w))<0) continue;   /* layer busy: keep what is shown */
+        if(!pbm_is_shown(scr) || prism_dragging() || !clear) { pip_hw_off(p); continue; }
         iw=w->Width-w->BorderLeft-w->BorderRight;ih=w->Height-w->BorderTop-w->BorderBottom;
-        left=w->LeftEdge+w->BorderLeft+p->left+((p->rel&PIPRel_Right)?iw:0);
-        top=w->TopEdge+w->BorderTop+p->top+((p->rel&PIPRel_Bottom)?ih:0);
+        ix=w->LeftEdge+w->BorderLeft;iy=w->TopEdge+w->BorderTop;
+        left=ix+p->left+((p->rel&PIPRel_Right)?iw:0);
+        top=iy+p->top+((p->rel&PIPRel_Bottom)?ih:0);
         width=p->width+((p->rel&PIPRel_Width)?iw:0);
         height=p->height+((p->rel&PIPRel_Height)?ih:0);
+        /* the board shows the whole rectangle: one reaching past the window's
+         * inner box (negative indents) or starting half way into a YUV pair
+         * (an odd clipleft) stays on the compositor, which clips and pairs */
         if(width<=0 || height<=0 || width>32767 || height>32767 || p->clipwidth<=0 || p->clipheight<=0 ||
            p->clipleft<0 || p->cliptop<0 || p->clipwidth>p->source->w-p->clipleft ||
-           p->clipheight>p->source->h-p->cliptop) {
+           p->clipheight>p->source->h-p->cliptop || (p->clipleft&1) ||
+           left<ix || top<iy || left+width>ix+iw || top+height>iy+ih) {
             pip_hw_off(p);
             continue;
         }
@@ -846,11 +862,11 @@ void p96_pip_hw_tick(void)
         o.screenBpp=scr->bpp;
         if(o.keyed) pen_bytes(scr,p->keyPen,o.key);
         o.dstX=left;o.dstY=top;o.dstW=width;o.dstH=height;
-        used[scr->card->index]=1;
-        if(p->hwOn && !memcmp(&o,&p->ov,sizeof(o))) continue;
+        if(p->hwOn && ovOwner[k]==p && !memcmp(&o,&p->ov,sizeof(o))) continue;
         if(p->hwRetry) { p->hwRetry--; continue; }
         if(bd->overlaySet(bd,&o)) {
             p->ov=o;
+            ovOwner[k]=p;
             if(!p->hwOn) { p->hwOn=1;pipGen++; }
         } else {
             pip_hw_off(p);
@@ -975,8 +991,10 @@ APTR p96_pip_attach(struct Window *w,struct PBitMap *source,UWORD sw,UWORD sh,LO
     if(!sh || sh>source->h) sh=source->h;
     if(!(p=AllocVec(sizeof(*p),MEMF_PUBLIC|MEMF_CLEAR))) return NULL;
     p->window=w;p->source=source;
-    p->keyPen=keyPen;
-    p->hw=pip_hw_possible(p,pbm_get(w->WScreen->RastPort.BitMap));
+    /* keyPen -2: the layer has a key, but it is the shared black, which the
+     * board would key on everywhere black is drawn: compositor only */
+    p->keyPen=keyPen<0 ? -1 : keyPen;
+    p->hw=keyPen!=-2 && pip_hw_possible(p,pbm_get(w->WScreen->RastPort.BitMap));
     for(i=0;i<256;i++)p->palette[i]=i*0x010101UL;
     if(!source->rgbTab) source->rgbTab=p->palette;
     p->rel=PIPRel_Width|PIPRel_Height;

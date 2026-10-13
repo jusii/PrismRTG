@@ -51,8 +51,8 @@ int main(void)
     if (ps)
         printf("PrismD is running: board \"%s\", interface version %u, %lu modes, release %s (%s)\n",
                ps->boardName ? ps->boardName : "?", ps->version, (unsigned long)ps->numModes,
-               ps->version >= 6 && ps->release ? ps->release : "before 1.1b6",
-               ps->version >= 6 && ps->releaseDate ? ps->releaseDate : "-");
+               ps->version >= 7 && ps->release ? ps->release : "before 1.1b6",
+               ps->version >= 7 && ps->releaseDate ? ps->releaseDate : "-");
     if (ps && ps->version >= 4 && ps->boardFlags)
         board_lines("", *ps->boardFlags, ps->hwOps);
     if (ps && ps->version >= 6 && ps->numBoards > 1 && ps->board2Flags) {

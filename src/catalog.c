@@ -42,7 +42,14 @@ void cat_open(void)
         /* ENV:PRISMLANG names a language ahead of the Locale preferences:
          * for trying a translation, and for a user who wants the tools in
          * another language than the system */
+        lang[0] = 0;
         if (GetVar((STRPTR)"PRISMLANG", (STRPTR)lang, sizeof(lang), 0) > 0) {
+            char *e = lang;              /* "echo >ENV:PRISMLANG deutsch" leaves a newline */
+            while (*e && *e != 10 && *e != 13 && *e != 32)   /* to the first newline, CR or space */
+                e++;
+            *e = 0;
+        }
+        if (lang[0]) {
             tags[n].ti_Tag = OC_Language;    tags[n++].ti_Data = (ULONG)lang;
         }
         tags[n].ti_Tag = TAG_DONE;           tags[n].ti_Data = 0;

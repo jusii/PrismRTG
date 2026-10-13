@@ -396,3 +396,9 @@ Yes|No, switch it off
 ID_ZZ9000 (126//)
 ZZ9000
 ;
+ID_AUTO_ONLY_THE_FIRST_BOARD_PRISMD_FINDS (127//)
+Auto: only the first board PrismD finds
+;
+ID_PRISMD_ISN_T_RUNNING_IT_READS_THESE (128//)
+PrismD isn't running. It reads these when it starts.
+;

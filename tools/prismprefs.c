@@ -139,7 +139,7 @@ static void board_status(struct Gui *g, UWORD code)
          * the other one of the two */
         BOOL nowSwapped = s->boardsSwapped;
         BOOL other = (code == 1) != nowSwapped;
-        sprintf(buf, S(ID_PRIMARY_FROM_THE_NEXT_START, "Primary from the next start: %.20s @%08lx"),
+        snprintf(buf, sizeof(buf), S(ID_PRIMARY_FROM_THE_NEXT_START, "Primary from the next start: %.20s @%08lx"),
                 other ? (s->board2Name ? s->board2Name : "?") : (s->boardName ? s->boardName : "?"),
                 (unsigned long)s->boardAddr[other ? 1 : 0]);
         Permit();
@@ -147,7 +147,7 @@ static void board_status(struct Gui *g, UWORD code)
         return;
     }
     Permit();
-    set_status(g, code == 2 ? ")Auto: only the first board PrismD finds" :
+    set_status(g, code == 2 ? S(ID_AUTO_ONLY_THE_FIRST_BOARD_PRISMD_FINDS, "Auto: only the first board PrismD finds") :
                   code == 1 ? S(ID_AUTO_SWAPPED_THE_SECOND_BOARD_FOUND_IS_T, "Auto, swapped: the second board found is the primary") :
                               S(ID_AUTO_EVERY_BOARD_PRISMD_FINDS_TWO_AT_MOS, "Auto: every board PrismD finds (two at most)"));
 }
@@ -195,11 +195,11 @@ static void entry_text(struct Gui *g, int i)
         strcpy(hz, "default");
     if (!prefs_size(&g->prefs, i, &w, &h)) {
         /* a custom size not set yet: pick it and give it a size below */
-        sprintf(g->text[i], "    custom %d  %2u-bit  (no size yet)",
+        snprintf(g->text[i], sizeof(g->text[i]), "    custom %d  %2u-bit  (no size yet)",
                 PREFS_SIZE(i) - PREFS_NFIXED + 1, prefs_depths[PREFS_DEPTH(i)]);
         return;
     }
-    sprintf(g->text[i], "%-3s %4ux%-4u %2u-bit %-7s %s",
+    snprintf(g->text[i], sizeof(g->text[i]), "%-3.3s %4ux%-4u %2u-bit %-7s %s",
             g->prefs.on[i] ? S(ID_ON_LOWER, "on") : "--", w, h,
             prefs_depths[PREFS_DEPTH(i)], hz,
             live1 && live2 ? S(ID_LIVE_1_2, "live 1+2") : live1 ? (g->boards > 1 ? S(ID_LIVE_1, "live 1") : S(ID_LIVE, "live")) : live2 ? S(ID_LIVE_2, "live 2") : "");
@@ -221,7 +221,7 @@ static void build_list(struct Gui *g)
 
 static void prog_text(struct Gui *g, int i)
 {
-    sprintf(g->ptext[i], "%-28.28s %s", g->prefs.prog[i].name,
+    snprintf(g->ptext[i], sizeof(g->ptext[i]), "%-28.28s %.12s", g->prefs.prog[i].name,
             g->prefs.prog[i].keep ? S(ID_KEPT, "kept") : S(ID_PROMOTED, "promoted"));
 }
 
@@ -379,15 +379,15 @@ static void running_status(struct Gui *g)
     s = (struct PrismSem *)FindSemaphore(PRISM_SEMNAME);
     g->boards = s && s->version >= 6 && s->numBoards > 1 ? 2 : 1;
     if (s && g->boards > 1)
-        sprintf(buf, S(ID_PRISMD_TWO_BOARDS_NEW_SETTINGS, "PrismD: %.18s + %.18s. New settings: restart it."),
+        snprintf(buf, sizeof(buf), S(ID_PRISMD_TWO_BOARDS_NEW_SETTINGS, "PrismD: %.18s + %.18s. New settings: restart it."),
                 s->boardName ? s->boardName : "?", s->board2Name ? s->board2Name : "?");
     else if (s)
-        sprintf(buf, S(ID_PRISMD_MODES_NEW_SETTINGS, "PrismD: %.24s, %lu modes. New settings: restart it."),
+        snprintf(buf, sizeof(buf), S(ID_PRISMD_MODES_NEW_SETTINGS, "PrismD: %.24s, %lu modes. New settings: restart it."),
                 s->boardName ? s->boardName : "?", (unsigned long)s->numModes);
     Permit();
     g->running = s != NULL;
     if (!s)
-        strcpy(buf, ")PrismD isn't running. It reads these when it starts.");
+        snprintf(buf, sizeof(buf), "%s", S(ID_PRISMD_ISN_T_RUNNING_IT_READS_THESE, "PrismD isn't running. It reads these when it starts."));
     strcpy(g->status, buf);
 }
 

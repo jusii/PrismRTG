@@ -85,6 +85,7 @@ struct VLayer {
     APTR            pip;         /* p96.c's PIP while attached           */
     LONG            indent[4];   /* left, top, right, bottom             */
     LONG            keyPen;      /* -1: no colour key                    */
+    BOOL            sharedKey;   /* the key is the shared black: no board overlay */
     ULONG           keyRGB;
     UWORD           w, h;
     UBYTE           srcType;
@@ -159,9 +160,12 @@ static struct VLayer *V_CreateVLayerHandleTagList(struct Screen *screen __asm("a
      * it takes, a 16- or 32-bit screen) the frames go into its VRAM; else,
      * or when VRAM is short, fast RAM and the compositor */
     v->source = NULL;
-    if (prism_hw_overlay() && sp->bd->overlaySet && (sp->bpp == 2 || sp->bpp == 4) &&
+    /* (free VRAM only - a video layer never evicts other bitmaps - and not
+     * with screen dragging on, where the board path is never used and the
+     * compositor would read every frame back from the board) */
+    if (prism_hw_overlay() && !prism_dragging() && sp->bd->overlaySet && (sp->bpp == 2 || sp->bpp == 4) &&
         PF_IS_YUV(fmt) && fmt != PF_YUV_YUYV)
-        v->source = pbm_new(sp->card, (w + 1) & ~1, h, 8, fmt, NULL, TRUE, TRUE);
+        v->source = pbm_new(sp->card, (w + 1) & ~1, h, 8, fmt, NULL, 2, TRUE);
     if (!v->source && !(v->source = pbm_new(sp->card, (w + 1) & ~1, h, 8, fmt, NULL, FALSE, TRUE))) {
         FreeVec(v);
         goto fail;
@@ -173,10 +177,20 @@ static struct VLayer *V_CreateVLayerHandleTagList(struct Screen *screen __asm("a
     v->srcType = type;
     v->keyPen = -1;
     if (GetTagData(VOA_UseColorKey, FALSE, tags) && screen->ViewPort.ColorMap) {
-        /* a pen for the player to paint its window with (black: the layer
-         * is drawn over the area anyway) */
-        v->keyPen = ObtainBestPenA(screen->ViewPort.ColorMap, 0, 0, 0, NULL);
-        v->keyRGB = 0;
+        /* a pen for the player to paint its window with. A board that shows
+         * the layer itself (the ZZ9000's overlay) shows the video wherever
+         * the screen holds this colour, so it is an exclusive pen of an
+         * unusual near-black (#080408, distinct after 15/16-bit rounding),
+         * not the shared black every window draws with; the compositor
+         * draws the layer over the area anyway */
+        v->keyPen = ObtainPen(screen->ViewPort.ColorMap, -1, 0x08080808UL, 0x04040404UL, 0x08080808UL,
+                              PEN_EXCLUSIVE);
+        v->keyRGB = 0x080408;
+        if (v->keyPen < 0) {             /* no free pen: black, and the board path stays off */
+            v->keyPen = ObtainBestPenA(screen->ViewPort.ColorMap, 0, 0, 0, NULL);
+            v->keyRGB = 0;
+            v->sharedKey = TRUE;
+        }
     }
     if (err) *err = VOERR_OK;
     return v;
@@ -215,7 +229,8 @@ static ULONG V_AttachVLayerTagList(struct VLayer *v __asm("a0"), struct Window *
     vl_detach(v);
     memset(v->indent, 0, sizeof(v->indent));
     vl_indents(v, tags);
-    if (!(v->pip = p96_pip_attach(w, v->source, v->w, v->h, v->indent[0], v->indent[1], v->indent[2], v->indent[3], v->keyPen)))
+    if (!(v->pip = p96_pip_attach(w, v->source, v->w, v->h, v->indent[0], v->indent[1], v->indent[2], v->indent[3],
+                                  v->sharedKey ? -2 : v->keyPen)))
         return 1;
     v->window = w;
     return 0;

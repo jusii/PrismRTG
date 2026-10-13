@@ -7,7 +7,7 @@
  * Clients find it with FindSemaphore() under Forbid(). That is the stable
  * way to tell that PrismRTG is running and which release it is (issue
  * #12): the semaphore stays whatever else is added later, so a client
- * checks FindSemaphore(PRISM_SEMNAME) and reads `release` (version 6+) -
+ * checks FindSemaphore(PRISM_SEMNAME) and reads `release` (version 7+) -
  * no prism.library replaces it. PrismD's own cybergraphics.library and
  * Picasso96API.library are compatibility faces, not the identity.
  * `version` counts revisions of this structure; a field exists from the
@@ -20,7 +20,7 @@
 #include <intuition/screens.h>
 
 #define PRISM_SEMNAME     "prism"
-#define PRISM_VERSION     6
+#define PRISM_VERSION     7
 /* the release this build belongs to, as the release tag names it without
  * its "v" and "-beta" (v1.1-beta5 = 1.1b5): PrismUpdate compares it with
  * GitHub's */
@@ -99,7 +99,7 @@ struct PrismSem {
      * two boards of one kind apart */
     ULONG boardAddr[2];
     UBYTE boardsSwapped;         /* PRIMARY=SECOND took effect at start */
-    /* the release this PrismD belongs to, for tools that show it (xSysInfo,
+    /* version 7: the release this PrismD belongs to, for tools that show it (xSysInfo,
      * issue #12): PRISM_RELEASE ("1.1b6") and the $VER date, dd.mm.yy */
     const char *release;
     const char *releaseDate;
