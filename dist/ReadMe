@@ -38,6 +38,24 @@ Using it
   Programs that ask for CyberGraphX or for the Picasso96 API get PrismRTG's
   own built-in cybergraphics.library and Picasso96API.library.
 
+New in 1.1 beta 6 (tested in emulators only - please report what you see)
+  Two graphics boards at once, each with its own monitor (PRISM: and
+  PRISM2:) and front screen. Screen mode promotion: programs that open a
+  chipset screen get it on the board (PrismPrefs "Promote screens", with a
+  per-program list). Four sizes of your own in the mode list, with VESA
+  timings computed on the Picasso II family. Video layers for players
+  (cgxvideo.library and the Picasso96 PIP with YUV formats); on a ZZ9000
+  with the BlitterStudio firmware 2.8+ the board shows them itself. Gamma
+  for 256-colour screens. Oversized screens with autoscroll. Pointers
+  bigger than the board's sprite. Update check over HTTPS in PrismPrefs
+  (needs AmiSSL 5). The installer updates, installs afresh or removes.
+  PrismPrefs and PrismSetup can be translated (no translations yet; see
+  docs/translating.md on GitHub). This ReadMe also comes as PrismRTG.guide.
+  Faster on a 68030 than beta 5: fills +11-12%, ReadPixel +95%, lines +23%.
+  Fixed: the pointer stopping short on screens wider than 1280 (#1),
+  dragging, the software pointer under drawing, flicker of a video layer
+  in a blitted band, and many smaller things from two code reviews.
+
 New in 1.1 beta 5
   From the first reports on hardware I don't have - an Apollo Vampire
   through its P96 driver, and a MiSTer's ZZ9000 core. Thank you.

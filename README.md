@@ -223,6 +223,15 @@ text -4.7% / -2.8%, ClipBlit -5.9% / -3.6%, ScrollRaster -8.8% / -5.4%,
 bitmap-to-screen blit -4.7% / -1.9%. The rest is a few instructions on
 every call. The A4000 columns will be measured again for beta 5.
 
+Beta 6 is ahead of beta 5 on every one of the 68030 bench's lines (three
+code alignments each, cycle-exact emulated Picasso II+): RectFill 100x100
++11%, RectFill 8x8 +12%, ReadPixel +95%, 40-character text +3%, and the
+~390-pixel line +23%. The line speed came from a compiler detail: GCC had
+turned the 8-bit line loop's short pixel runs into calls to the C
+library's memset, which took a fifth of all line time for runs of six to
+ten pixels and moved with every change to PrismD's size; the build now
+keeps such loops as loops (`-fno-tree-loop-distribute-patterns`).
+
 | Test | Picasso96 | PrismRTG 1.0 | 1.0.2 (9 Oct) | 1.1 beta 4 (9 Oct) |
 |---|---|---|---|---|
 | RectFill 100x100 | 19,933 | **22,046** | **21,157** | **21,402** |
